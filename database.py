@@ -38,7 +38,7 @@ class PhotoDatabase:
         # Define database engine
 
         if path.exists():
-            logger.info(f"Database file {path.name} already exists.")
+            logger.info(f"Opening existant {path.name}.")
         else:
             logger.info(f"Creating database file {path.name}.")
 
@@ -60,6 +60,9 @@ class PhotoDatabase:
             ):
                 session.add(photo)
                 session.commit()
+                return True
+            else:
+                return False
 
     def update_photo_newpath(self, crypto_hash, newpath):
         with Session(self.engine) as session:

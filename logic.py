@@ -62,24 +62,54 @@ class Photo:
         tags["filepath"] = str(self.filepath)
 
         # exif image information
-        tags["camera"] = exif_tags["Image Model"].printable
-        tags["datetime"] = datetime.strptime(
-            exif_tags["EXIF DateTimeOriginal"].printable, "%Y:%m:%d %H:%M:%S"
+        tags["camera"] = (
+            exif_tags["Image Model"].printable if exif_tags.get("Image Model") else None
+        )
+        tags["datetime"] = (
+            datetime.strptime(
+                exif_tags["EXIF DateTimeOriginal"].printable, "%Y:%m:%d %H:%M:%S"
+            )
+            if exif_tags.get("EXIF DateTimeOriginal")
+            else None
         )
         tags["size"] = self.filepath.stat().st_size
-        tags["width"] = exif_tags["EXIF ExifImageWidth"].printable
-        tags["height"] = exif_tags["EXIF ExifImageLength"].printable
-        tags["resolution_units"] = exif_tags["Image ResolutionUnit"].printable
-        tags["resolution_x"] = exif_tags["Image XResolution"].printable
-        tags["resolution_y"] = exif_tags["Image YResolution"].printable
+        tags["width"] = (
+            exif_tags["EXIF ExifImageWidth"].printable
+            if exif_tags.get("EXIF ExifImageWidth")
+            else None
+        )
+        tags["height"] = (
+            exif_tags["EXIF ExifImageLength"].printable
+            if exif_tags.get("EXIF ExifImageLength")
+            else None
+        )
+        tags["resolution_units"] = (
+            exif_tags["Image ResolutionUnit"].printable
+            if exif_tags.get("Image ResolutionUnit")
+            else None
+        )
+        tags["resolution_x"] = (
+            exif_tags["Image XResolution"].printable
+            if exif_tags.get("Image XResolution")
+            else None
+        )
+        tags["resolution_y"] = (
+            exif_tags["Image YResolution"].printable
+            if exif_tags.get("Image YResolution")
+            else None
+        )
 
         # extract exif GPS information if available
         if exif_tags.get("Image GPSInfo"):
             latitude = get_coordinate_from_exif_str(
                 exif_tags["GPS GPSLatitude"].printable
+                if exif_tags.get("GPS GPSLatitude")
+                else None
             )
             longitude = get_coordinate_from_exif_str(
                 exif_tags["GPS GPSLongitude"].printable
+                if exif_tags.get("GPS GPSLongitude")
+                else None
             )
             if latitude and longitude:
                 location_coord_str = f"{latitude:.6f};{longitude:.6f}"
@@ -161,11 +191,15 @@ class PhotoOrganizer:
 
     def copy_images(self, image_list: List[Photo]):
         # Find all photo files in the photo_folders list
-
+        files_not_copied = []
         for image in image_list:
-            dest_folder = self.path.joinpath(
-                str(image.tags["datetime"].year),
-                str(image.tags["datetime"].month),
+            dest_folder = (
+                self.path.joinpath(
+                    str(image.tags["datetime"].year),
+                    str(image.tags["datetime"].month),
+                )
+                if image.tags.get("datetime")
+                else self.path.joinpath("unknown", "unknown")
             )
             dest_folder.mkdir(parents=True, exist_ok=True)
 
@@ -175,9 +209,55 @@ class PhotoOrganizer:
             dest_filename = f"{dest_name}.{extension.upper()}"
             dest_filepath = dest_folder.joinpath(dest_filename).absolute()
 
-            shutil.copy(str(image.filepath), str(dest_filepath))
+            if not dest_filepath.exists():
+                shutil.copy(str(image.filepath), str(dest_filepath))
+                self.database.update_photo_newpath(
+                    image.tags["crypto_hash"], dest_filepath
+                )
+            else:
+                files_not_copied.append(str(image.filepath))
 
-            self.database.update_photo_newpath(image.tags["crypto_hash"], dest_filepath)
+        return files_not_copied
+
+    def process_folder(self, path: Path, do_copy=True):
+        # sourcery skip: inline-immediately-returned-variable
+        image_paths_lst = self.scan_folder(path)
+
+        photos_lst = self.analyse_images(image_paths_lst)
+        photos_added_lst = photos_lst.copy()
+
+        for image in photos_lst:
+            photo = PhotoModel(
+                original_filepath=image.tags["filepath"],
+                new_filepath="",
+                camera=image.tags["camera"],
+                date_time=image.tags["datetime"],
+                size=image.tags["size"],
+                width=image.tags["width"],
+                height=image.tags["height"],
+                resolution_units=image.tags["resolution_units"],
+                resolution_x=image.tags["resolution_x"],
+                resolution_y=image.tags["resolution_y"],
+                location_coord=image.tags["location_coord"],
+                location=image.tags["location"],
+                perceptual_hash=image.tags["perceptual_hash"],
+                crypto_hash=image.tags["crypto_hash"],
+            )
+            aux = image.tags["filepath"]
+            if not self.database.add_photo(photo):
+                logger.info(
+                    f"Database already contains entry with crypto_hash for image {aux}"
+                )
+            else:
+                logger.info(f"Image added into database {aux}")
+
+        if do_copy:
+            self.copy_images(photos_added_lst)
+
+        photos_not_added = [
+            photo.tags["filepath"] for photo in photos_lst if photo in photos_added_lst
+        ]
+        return photos_not_added
 
     def filter_photos(self, search_tags: Dict[str, str]) -> List[Photo]:
         filtered_photos = []
