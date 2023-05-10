@@ -8,17 +8,14 @@ import shutil
 import exifread
 import imagehash
 
-from utils import get_location_from_gps, get_coordinate_from_exif_str
+from utils import get_location_from_gpscoord, get_gpscoord_from_exif
 from utils import generate_crypto_hash, generate_perceptual_hash
 
 from database import PhotoModel, PhotoDatabase
 from utils import get_logger
 
 # Create configure module   module_logger
-logger = get_logger()
-
-DB_FILE_NAME = "photo.db"
-IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".bmp"]
+logger = get_logger(__name__)
 
 
 class Photo:
@@ -101,19 +98,11 @@ class Photo:
 
         # extract exif GPS information if available
         if exif_tags.get("Image GPSInfo"):
-            latitude = get_coordinate_from_exif_str(
-                exif_tags["GPS GPSLatitude"].printable
-                if exif_tags.get("GPS GPSLatitude")
-                else None
-            )
-            longitude = get_coordinate_from_exif_str(
-                exif_tags["GPS GPSLongitude"].printable
-                if exif_tags.get("GPS GPSLongitude")
-                else None
-            )
+            latitude, longitude = get_gpscoord_from_exif(exif_tags)
+
             if latitude and longitude:
                 location_coord_str = f"{latitude:.6f};{longitude:.6f}"
-                location_str = get_location_from_gps(latitude, longitude)
+                location_str = get_location_from_gpscoord(latitude, longitude)
             else:
                 location_str = "unknown_location"
                 location_coord_str = "unknown_location"
@@ -132,9 +121,9 @@ class Photo:
 
 
 class PhotoOrganizer:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, db_filename):
         self.path = path
-        path_db = path.joinpath(f".photo-organizer/{DB_FILE_NAME}")
+        path_db = path.joinpath(f".photo-organizer/{db_filename}")
         self.database = PhotoDatabase(path_db)
 
     def check_validity(self):
@@ -157,107 +146,90 @@ class PhotoOrganizer:
             "files_exist": files_exist,
         }
 
-    def scan_folder(self, folder_path: Path) -> List[Path]:
-        # Add new photo folders to the database
+    def add_image(self, image: Photo) -> None:
+        photo_model = PhotoModel(
+            original_filepath=image.tags["filepath"],
+            new_filepath="",
+            camera=image.tags["camera"],
+            date_time=image.tags["datetime"],
+            size=image.tags["size"],
+            width=image.tags["width"],
+            height=image.tags["height"],
+            resolution_units=image.tags["resolution_units"],
+            resolution_x=image.tags["resolution_x"],
+            resolution_y=image.tags["resolution_y"],
+            location_coord=image.tags["location_coord"],
+            location=image.tags["location"],
+            perceptual_hash=image.tags["perceptual_hash"],
+            crypto_hash=image.tags["crypto_hash"],
+        )
 
-        return [
-            file_path
-            for file_path in folder_path.glob("**/*")
-            if file_path.is_file() and file_path.suffix.lower() in IMAGE_EXTENSIONS
-        ]
+        self.database.add_photo(photo_model)
 
-    def analyse_images(self, image_files: List[Path]) -> List[Photo]:
-        return [Photo(image_file) for image_file in image_files]
-
-    def add_images(self, image_list: List[Photo]) -> List[Photo]:
-        for image in image_list:
-            photo_model = PhotoModel(
-                original_filepath=image.tags["filepath"],
-                new_filepath="",
-                camera=image.tags["camera"],
-                date_time=image.tags["datetime"],
-                size=image.tags["size"],
-                width=image.tags["width"],
-                height=image.tags["height"],
-                resolution_units=image.tags["resolution_units"],
-                resolution_x=image.tags["resolution_x"],
-                resolution_y=image.tags["resolution_y"],
-                location_coord=image.tags["location_coord"],
-                location=image.tags["location"],
-                perceptual_hash=image.tags["perceptual_hash"],
-                crypto_hash=image.tags["crypto_hash"],
+    def copy_image(self, image: Photo) -> bool:
+        dest_folder = (
+            self.path.joinpath(
+                str(image.tags["datetime"].year),
+                str(image.tags["datetime"].month),
             )
-            self.database.add_photo(photo_model)
+            if image.tags.get("datetime")
+            else self.path.joinpath("unknown", "unknown")
+        )
+        dest_folder.mkdir(parents=True, exist_ok=True)
 
-    def copy_images(self, image_list: List[Photo]):
-        # Find all photo files in the photo_folders list
-        files_not_copied = []
-        for image in image_list:
-            dest_folder = (
-                self.path.joinpath(
-                    str(image.tags["datetime"].year),
-                    str(image.tags["datetime"].month),
-                )
-                if image.tags.get("datetime")
-                else self.path.joinpath("unknown", "unknown")
-            )
-            dest_folder.mkdir(parents=True, exist_ok=True)
+        dest_name = image.tags["perceptual_hash"]
+        extension = Path(image.tags["filepath"]).suffix[1:]
 
-            dest_name = image.tags["perceptual_hash"]
-            extension = Path(image.tags["filepath"]).suffix[1:]
+        dest_filename = f"{dest_name}.{extension.upper()}"
+        dest_filepath = dest_folder.joinpath(dest_filename).absolute()
 
-            dest_filename = f"{dest_name}.{extension.upper()}"
-            dest_filepath = dest_folder.joinpath(dest_filename).absolute()
-
-            if not dest_filepath.exists():
+        if not dest_filepath.exists():
+            try:
                 shutil.copy(str(image.filepath), str(dest_filepath))
                 self.database.update_photo_newpath(
                     image.tags["crypto_hash"], dest_filepath
                 )
-            else:
-                files_not_copied.append(str(image.filepath))
+            except Exception:
+                logger.error(Exception)
+                return False
+        else:
+            logger.error(f"File {dest_filepath.name} already exists in database")
+            return False
 
-        return files_not_copied
+        return True
 
-    def process_folder(self, path: Path, do_copy=True):
-        # sourcery skip: inline-immediately-returned-variable
-        image_paths_lst = self.scan_folder(path)
+    def process_file(self, image_path: Path, do_copy=True):
+        # process all images found
+        # analyse image and create logic.Photo object
+        image_obj = Photo(image_path)
 
-        photos_lst = self.analyse_images(image_paths_lst)
-        photos_added_lst = photos_lst.copy()
+        # create image database object
+        image_db = PhotoModel(
+            original_filepath=image_obj.tags["filepath"],
+            new_filepath="",
+            camera=image_obj.tags["camera"],
+            date_time=image_obj.tags["datetime"],
+            size=image_obj.tags["size"],
+            width=image_obj.tags["width"],
+            height=image_obj.tags["height"],
+            resolution_units=image_obj.tags["resolution_units"],
+            resolution_x=image_obj.tags["resolution_x"],
+            resolution_y=image_obj.tags["resolution_y"],
+            location_coord=image_obj.tags["location_coord"],
+            location=image_obj.tags["location"],
+            perceptual_hash=image_obj.tags["perceptual_hash"],
+            crypto_hash=image_obj.tags["crypto_hash"],
+        )
 
-        for image in photos_lst:
-            photo = PhotoModel(
-                original_filepath=image.tags["filepath"],
-                new_filepath="",
-                camera=image.tags["camera"],
-                date_time=image.tags["datetime"],
-                size=image.tags["size"],
-                width=image.tags["width"],
-                height=image.tags["height"],
-                resolution_units=image.tags["resolution_units"],
-                resolution_x=image.tags["resolution_x"],
-                resolution_y=image.tags["resolution_y"],
-                location_coord=image.tags["location_coord"],
-                location=image.tags["location"],
-                perceptual_hash=image.tags["perceptual_hash"],
-                crypto_hash=image.tags["crypto_hash"],
-            )
-            aux = image.tags["filepath"]
-            if not self.database.add_photo(photo):
-                logger.info(
-                    f"Database already contains entry with crypto_hash for image {aux}"
-                )
-            else:
-                logger.info(f"Image added into database {aux}")
+        # add image db object into database
+        if not self.database.add_photo(image_db):
+            return False
 
+        # copy image files into repository
         if do_copy:
-            self.copy_images(photos_added_lst)
+            self.copy_image(image_obj)
 
-        photos_not_added = [
-            photo.tags["filepath"] for photo in photos_lst if photo in photos_added_lst
-        ]
-        return photos_not_added
+        return True
 
     def filter_photos(self, search_tags: Dict[str, str]) -> List[Photo]:
         filtered_photos = []

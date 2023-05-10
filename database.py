@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, LargeBinary
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
@@ -7,7 +8,7 @@ from typing import Dict, List
 from utils import get_logger
 
 # Create configure module   module_logger
-logger = get_logger()
+logger = get_logger(__name__)
 
 Base = declarative_base()
 
@@ -70,6 +71,18 @@ class PhotoDatabase:
             photo.new_filepath = str(newpath)
             session.commit()
 
+    def search_by_date(self, start_date, end_date=None):
+        if not end_date:
+            end_date = datetime.now()
+        with Session(self.engine) as session:
+            photos = (
+                session.query(PhotoModel)
+                .filter(PhotoModel.date_time.between(start_date, end_date))
+                .all()
+            )
+
+        return photos
+
     def search_photos(self, tags):
         """Search for photos by tag."""
         return (
@@ -79,7 +92,10 @@ class PhotoDatabase:
         )
 
     def get_all(self) -> List[PhotoModel]:
-        return self.session.query(PhotoModel).all()
+        with Session(self.engine) as session:
+            photos = session.query(PhotoModel).all()
+
+        return photos
 
     def get_photos_paths(self) -> Dict[str, Dict[str, str]]:
         """Returns a dictionary with photo data."""

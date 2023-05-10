@@ -1,19 +1,66 @@
+from pathlib import Path
+from typing import List, Tuple
 import logging
+from rich.logging import RichHandler
 from geopy.geocoders import Nominatim
 
 
-def get_coordinate_from_exif_str(exif_coord_str: str) -> float:
-    if not exif_coord_str:
-        return None
+def scan_folder(folder_path: Path, image_exts) -> List[Path]:
+    # Add new photo folders to the database
 
-    deg, min, sec_fraction = str(exif_coord_str).strip("[]").split(", ")
-    sec_numerator, sec_denominator = map(int, sec_fraction.split("/"))
-    sec = sec_numerator / sec_denominator
+    return [
+        file_path
+        for file_path in folder_path.glob("**/*")
+        if file_path.is_file() and file_path.suffix.lower() in image_exts
+    ]
 
-    return float(deg) + float(min) / 60 + sec / 3600
+
+def get_gpscoord_from_exif(exif_tags: str) -> Tuple[float, float]:
+    def parse_coordinate_str(exif_coord_str: str):
+        try:
+            deg, min, sec_fraction = exif_coord_str.strip("[]").split(", ")
+            if "/" in sec_fraction:
+                sec_numerator, sec_denominator = sec_fraction.split("/")
+                sec = float(sec_numerator) / float(sec_denominator)
+            else:
+                sec = float(sec_fraction)
+
+            return float(deg) + float(min) / 60 + sec / 3600
+
+        except Exception:
+            return None
+
+    if exif_tags.get("GPS GPSLongitude"):
+        lon_abs_exif_str = exif_tags["GPS GPSLongitude"].printable
+    else:
+        return None, None
+
+    if exif_tags.get("GPS GPSLatitude"):
+        lat_abs_exif_str = exif_tags["GPS GPSLatitude"].printable
+    else:
+        return None, None
+
+    if exif_tags.get("GPS GPSLongitudeRef"):
+        lon_ref_exif_str = exif_tags["GPS GPSLongitudeRef"].printable
+    else:
+        return None, None
+
+    if exif_tags.get("GPS GPSLatitudeRef"):
+        lat_ref_exif_str = exif_tags["GPS GPSLatitudeRef"].printable
+    else:
+        return None, None
+
+    latitude = parse_coordinate_str(lat_abs_exif_str) * (
+        1 if lat_ref_exif_str.upper() == "N" else -1
+    )
+    longitude = parse_coordinate_str(lon_abs_exif_str) * (
+        1 if lon_ref_exif_str.upper() == "E" else -1
+    )
+
+    return latitude, longitude
 
 
-def get_location_from_gps(latitude, longitude):
+def get_location_from_gpscoord(latitude, longitude):
     if not (latitude and longitude):
         return "unknown_location"
 
@@ -84,14 +131,16 @@ def generate_crypto_hash(image_path: str, algorithm: str = "sha256") -> str:
     return hasher.hexdigest()
 
 
-def get_logger(main=False):
-    logger = logging.getLogger(__name__)
+def get_logger(name):
+    logger = logging.getLogger("rich")
     logger.setLevel(logging.DEBUG)
 
-    if main:
-        formatter = logging.Formatter("%(levelname)s - %(message)s")
-        handler = logging.FileHandler("logs/log.log", mode="a")
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+    #        formatter = logging.Formatter("%(levelname)s - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s -  [%(filename)s:%(lineno)d] - %(levelname)s - %(message)s"
+    )
+    handler = logging.FileHandler("logs/log.log", mode="a")
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
     return logger
