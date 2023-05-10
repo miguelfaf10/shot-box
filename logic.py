@@ -121,17 +121,13 @@ class Photo:
 
 
 class PhotoOrganizer:
-    def __init__(self, path: Path, db_filename):
-        self.path = path
-        path_db = path.joinpath(f".photo-organizer/{db_filename}")
-        self.database = PhotoDatabase(path_db)
-
-    def check_validity(self):
-        # TODO: Check if a valid repository with valid database file exists
-        return True
+    def __init__(self, repo_path: Path, db_path: Path):
+        self.repo_path = repo_path
+        self.db_path = db_path
+        self.db = PhotoDatabase(self.db_path)
 
     def get_summary(self):
-        photos = self.database.get_all()
+        photos = self.db.get_all()
 
         total_photos = len(photos)
         total_size = 0
@@ -164,16 +160,16 @@ class PhotoOrganizer:
             crypto_hash=image.tags["crypto_hash"],
         )
 
-        self.database.add_photo(photo_model)
+        self.db.add_photo(photo_model)
 
     def copy_image(self, image: Photo) -> bool:
         dest_folder = (
-            self.path.joinpath(
+            self.repo_path.joinpath(
                 str(image.tags["datetime"].year),
                 str(image.tags["datetime"].month),
             )
             if image.tags.get("datetime")
-            else self.path.joinpath("unknown", "unknown")
+            else self.repo_path.joinpath("unknown", "unknown")
         )
         dest_folder.mkdir(parents=True, exist_ok=True)
 
@@ -186,9 +182,7 @@ class PhotoOrganizer:
         if not dest_filepath.exists():
             try:
                 shutil.copy(str(image.filepath), str(dest_filepath))
-                self.database.update_photo_newpath(
-                    image.tags["crypto_hash"], dest_filepath
-                )
+                self.db.update_photo_newpath(image.tags["crypto_hash"], dest_filepath)
             except Exception:
                 logger.error(Exception)
                 return False
@@ -222,7 +216,7 @@ class PhotoOrganizer:
         )
 
         # add image db object into database
-        if not self.database.add_photo(image_db):
+        if not self.db.add_photo(image_db):
             return False
 
         # copy image files into repository
@@ -239,6 +233,3 @@ class PhotoOrganizer:
     def display_photos(self, photos: List[Photo]) -> None:
         pass
         # Code for displaying selected photos
-
-
-input_photo = "/home/miguel/sw/photo-organizer/data/Curling/IMG_4834.JPG"
