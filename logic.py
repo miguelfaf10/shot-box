@@ -142,57 +142,25 @@ class PhotoOrganizer:
             "files_exist": files_exist,
         }
 
-    def add_image(self, image: Photo) -> None:
-        photo_model = PhotoModel(
-            original_filepath=image.tags["filepath"],
-            new_filepath="",
-            camera=image.tags["camera"],
-            date_time=image.tags["datetime"],
-            size=image.tags["size"],
-            width=image.tags["width"],
-            height=image.tags["height"],
-            resolution_units=image.tags["resolution_units"],
-            resolution_x=image.tags["resolution_x"],
-            resolution_y=image.tags["resolution_y"],
-            location_coord=image.tags["location_coord"],
-            location=image.tags["location"],
-            perceptual_hash=image.tags["perceptual_hash"],
-            crypto_hash=image.tags["crypto_hash"],
-        )
+    # def add_image(self, image: Photo) -> None:
+    #     photo_model = PhotoModel(
+    #         original_filepath=image.tags["filepath"],
+    #         new_filepath="",
+    #         camera=image.tags["camera"],
+    #         date_time=image.tags["datetime"],
+    #         size=image.tags["size"],
+    #         width=image.tags["width"],
+    #         height=image.tags["height"],
+    #         resolution_units=image.tags["resolution_units"],
+    #         resolution_x=image.tags["resolution_x"],
+    #         resolution_y=image.tags["resolution_y"],
+    #         location_coord=image.tags["location_coord"],
+    #         location=image.tags["location"],
+    #         perceptual_hash=image.tags["perceptual_hash"],
+    #         crypto_hash=image.tags["crypto_hash"],
+    #     )
 
-        self.db.add_photo(photo_model)
-
-    def copy_image(self, image: Photo) -> bool:
-        if "3904" in image.tags["filepath"]:
-            pass
-        dest_folder = (
-            self.repo_path.joinpath(
-                str(image.tags["datetime"].year),
-                str(image.tags["datetime"].month),
-            )
-            if image.tags.get("datetime")
-            else self.repo_path.joinpath("unknown", "unknown")
-        )
-        dest_folder.mkdir(parents=True, exist_ok=True)
-
-        dest_name = image.tags["perceptual_hash"]
-        extension = Path(image.tags["filepath"]).suffix[1:]
-
-        dest_filename = f"{dest_name}.{extension.upper()}"
-        dest_filepath = dest_folder.joinpath(dest_filename).absolute()
-
-        if not dest_filepath.exists():
-            try:
-                shutil.copy(str(image.filepath), str(dest_filepath))
-                self.db.update_photo_newpath(image.tags["crypto_hash"], dest_filepath)
-            except Exception:
-                logger.error(Exception)
-                return False
-        else:
-            logger.error(f"File {dest_filepath.name} already exists in database")
-            return False
-
-        return True
+    #     self.db.add_photo(photo_model)
 
     def process_file(self, image_path: Path, do_copy=True):
         # process all images found
@@ -202,7 +170,6 @@ class PhotoOrganizer:
         # create image database object
         image_db = PhotoModel(
             original_filepath=image_obj.tags["filepath"],
-            new_filepath="",
             camera=image_obj.tags["camera"],
             date_time=image_obj.tags["datetime"],
             size=image_obj.tags["size"],
@@ -215,17 +182,47 @@ class PhotoOrganizer:
             location=image_obj.tags["location"],
             perceptual_hash=image_obj.tags["perceptual_hash"],
             crypto_hash=image_obj.tags["crypto_hash"],
+            new_filepath="",
+            n_perceptual_hash=0,
         )
 
         # add image db object into database
-        if not self.db.add_photo(image_db):
+        n_perceptualhash = self.db.add_photo(image_db)
+        if n_perceptualhash is None:
             return False
 
         # copy image files into repository
         if do_copy:
-            self.copy_image(image_obj)
+            dest_folder = (
+                self.repo_path.joinpath(
+                    str(image_obj.tags["datetime"].year),
+                    str(image_obj.tags["datetime"].month),
+                )
+                if image_obj.tags.get("datetime")
+                else self.repo_path.joinpath("unknown", "unknown")
+            )
+            dest_folder.mkdir(parents=True, exist_ok=True)
 
-        return True
+            dest_name = f"{image_obj.tags['perceptual_hash']}_{n_perceptualhash}"
+            extension = Path(image_obj.tags["filepath"]).suffix[1:]
+
+            dest_filename = f"{dest_name}.{extension.upper()}"
+            dest_filepath = dest_folder.joinpath(dest_filename).absolute()
+
+            if not dest_filepath.exists():
+                try:
+                    shutil.copy(str(image_obj.tags["filepath"]), str(dest_filepath))
+                    self.db.update_photo_newpath(
+                        image_obj.tags["crypto_hash"], dest_filepath
+                    )
+                except Exception:
+                    logger.error(Exception)
+                    return False
+            else:
+                logger.error(f"File {dest_filepath.name} already exists in repository")
+                return False
+
+            return True
 
     def filter_photos(self, search_tags: Dict[str, str]) -> List[Photo]:
         filtered_photos = []
@@ -246,19 +243,19 @@ class PhotoOrganizer:
 
         for row in rows:
             # check db entries
-            #    file has been copied
-            #        file exists in new location
-            #            file is the correct image
-            #        file  doesn't exist in new location
-
             if row.new_filepath:
+                # file has been copied
+
                 if Path(row.new_filepath).exists():
-                    if Path(row.new_filepath).stem == generate_perceptual_hash(
-                        Path(row.new_filepath)
-                    ):
+                    # file exists in new location
+                    if Path(row.new_filepath).stem.split("_")[
+                        0
+                    ] == generate_perceptual_hash(Path(row.new_filepath)):
+                        # file is the correct image
                         exist_repo_not_db.remove(Path(row.new_filepath))
                     else:
                         exist_repo_incorrect_image.append(Path(row.new_filepath))
+                #        file  doesn't exist in new location
                 else:
                     exist_db_not_repo.append(Path(row.new_filepath))
             else:
