@@ -80,7 +80,7 @@ import imagehash
 import hashlib
 
 
-def generate_perceptual_hash(image_path: str, method: str = "phash") -> str:
+def generate_perceptual_hash(image_path: Path, method: str = "phash") -> str:
     """
     Generates a perceptual hash identifier for an image using the specified method.
 

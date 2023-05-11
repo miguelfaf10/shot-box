@@ -12,7 +12,7 @@ from utils import get_location_from_gpscoord, get_gpscoord_from_exif
 from utils import generate_crypto_hash, generate_perceptual_hash
 
 from database import PhotoModel, PhotoDatabase
-from utils import get_logger
+from utils import get_logger, scan_folder
 
 # Create configure module   module_logger
 logger = get_logger(__name__)
@@ -114,8 +114,8 @@ class Photo:
         tags["location"] = location_str
 
         # generate image hash ids
-        tags["perceptual_hash"] = generate_perceptual_hash(str(self.filepath))
-        tags["crypto_hash"] = generate_crypto_hash(str(self.filepath))
+        tags["perceptual_hash"] = generate_perceptual_hash(self.filepath)
+        tags["crypto_hash"] = generate_crypto_hash(self.filepath)
 
         return tags
 
@@ -126,7 +126,7 @@ class PhotoOrganizer:
         self.db_path = db_path
         self.db = PhotoDatabase(self.db_path)
 
-    def get_summary(self):
+    def get_info(self):
         photos = self.db.get_all()
 
         total_photos = len(photos)
@@ -163,6 +163,8 @@ class PhotoOrganizer:
         self.db.add_photo(photo_model)
 
     def copy_image(self, image: Photo) -> bool:
+        if "3904" in image.tags["filepath"]:
+            pass
         dest_folder = (
             self.repo_path.joinpath(
                 str(image.tags["datetime"].year),
@@ -233,3 +235,38 @@ class PhotoOrganizer:
     def display_photos(self, photos: List[Photo]) -> None:
         pass
         # Code for displaying selected photos
+
+    def check_consistency(self, image_ext):
+        rows = self.db.get_all()
+
+        exist_db_not_copied = []
+        exist_db_not_repo = []
+        exist_repo_incorrect_image = []
+        exist_repo_not_db = scan_folder(self.repo_path, image_ext)
+
+        for row in rows:
+            # check db entries
+            #    file has been copied
+            #        file exists in new location
+            #            file is the correct image
+            #        file  doesn't exist in new location
+
+            if row.new_filepath:
+                if Path(row.new_filepath).exists():
+                    if Path(row.new_filepath).stem == generate_perceptual_hash(
+                        Path(row.new_filepath)
+                    ):
+                        exist_repo_not_db.remove(Path(row.new_filepath))
+                    else:
+                        exist_repo_incorrect_image.append(Path(row.new_filepath))
+                else:
+                    exist_db_not_repo.append(Path(row.new_filepath))
+            else:
+                exist_db_not_copied.append(Path(row.original_filepath))
+
+        return {
+            "exist_db_not_copied": exist_db_not_copied,
+            "exist_db_not_repo": exist_db_not_repo,
+            "exist_repo_not_db": exist_repo_not_db,
+            "exist_repo_incorrect_name": exist_repo_incorrect_image,
+        }

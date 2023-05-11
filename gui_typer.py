@@ -35,19 +35,14 @@ class Repository:
             self.create_repo()
             console.print(f"Repo created at {str(self.repo_path)}")
         else:
-            console.print(f"Repo folder at {str(self.repo_path)} already exists")
-        self.photo_organizer = PhotoOrganizer(self.repo_path, self.db_path)
+            console.print(f"Repo folder at {str(self.repo_path)} exists")
+        self.photo_org = PhotoOrganizer(self.repo_path, self.db_path)
 
     def check_repo(self):
-        if not self.repo_path.exists():
-            logger.debug(f"Folder {str(self.repo_path)} does not exist")
+        if not (self.repo_path.exists() and self.db_path.parent.exists()):
             return False
-
-        if not self.db_path.parent.exists():
-            logger.debug(f"Database folder {str(self.db_path)} not present")
-            return False
-
-        return True
+        else:
+            return True
 
     def create_repo(self):
         self.db_path.parent.mkdir(parents=True)
@@ -67,32 +62,42 @@ def create(repo_str: str):
     None
     """
     repo = Repository(Path(repo_str))
-    photo_org = PhotoOrganizer(repo.repo_path, repo.db_path)
+    # photo_org = PhotoOrganizer(repo.repo_path, repo.db_path)
+
+
+def start_repo(repo_path: Path):
+    """Create Repository object based on input repository folder and checks if this
+    is folder contains a valir repository.
+
+    Args:
+        repo_path (Path): filesystem path to repository folder
+
+    Returns:
+        Repository: repo object
+    """
+    repo = Repository(repo_path)
+    if not repo.check_repo():
+        console.print(f"Path {str(repo.repo_pathpath)} is not a valid repository")
+        exit(-1)
+    # photo_org = PhotoOrganizer(repo.repo_path, repo.db_path)
+
+    return repo
 
 
 @app.command()
 def info(repo_str: str):
-    repo = Repository(Path(repo_str))
+    repo = start_repo(Path(repo_str))
 
-    if not repo.check_repo():
-        console.print(f"Path {str(repo.repo_pathpath)} is not a valid repository")
-        exit(-1)
-
-    photo_org = PhotoOrganizer(repo.repo_path, repo.db_path)
-    info = photo_org.get_summary()
+    info = repo.photo_org.get_info()
     console.print(f"Images in Database   : {info['total_photos']} entries")
     console.print(f"Images in Repository : {info['files_exist']} files")
-    console.print(f"Diskspace occupied   : {int(info['total_size'])/(2*1024):.0f} MB")
+    console.print(f"Diskspace occupied   : {int(info['total_size'])/(1024**2):.0f} MB")
 
 
 @app.command()
 def add(repo_str: str, folder_lst: List[str]):
-    repo = Repository(Path(repo_str))
-    if not repo.check_repo():
-        console.print(f"Path {str(repo.repo_pathpath)} is not a valid repository")
-        exit(-1)
+    repo = start_repo(Path(repo_str))
 
-    photo_org = PhotoOrganizer(repo.repo_path, repo.db_path)
     ignored_folders = []
     ignored_images = []
     processed_images = []
@@ -114,13 +119,15 @@ def add(repo_str: str, folder_lst: List[str]):
             # find all image files in folder and sub-folders
             image_paths = scan_folder(folder_path, IMAGE_EXTENSIONS)
             add_file_task = progress.add_task(
-                "[blue]Adding files:   ", total=len(image_paths)
+                "[blue]Adding images:  ", total=len(image_paths)
             )
 
             for image_path in image_paths:
+                if "3904" in image_path.name:
+                    pass
                 progress.update(add_file_task, advance=1)
 
-                if not photo_org.process_file(image_path):
+                if not repo.photo_org.process_file(image_path):
                     ignored_images.append(image_path.name)
                 else:
                     processed_images.append(image_path.name)
@@ -139,12 +146,22 @@ def add(repo_str: str, folder_lst: List[str]):
 
 @app.command()
 def verify(repo_str: str):
-    repo = Repository(Path(repo_str))
-    if not repo.check_repo():
-        console.print(f"Path {str(repo.repo_pathpath)} is not a valid repository")
-        exit(-1)
+    repo = start_repo(Path(repo_str))
 
-    photo_org = PhotoOrganizer(repo.repo_path, db_filename=DB_FILE_NAME)
+    out = repo.photo_org.check_consistency(IMAGE_EXTENSIONS)
+
+    if sum((len(num) for num in out.values())) == 0:
+        console.print("Repository is in perfect shape!")
+    else:
+        if (n := len(out["exist_db_not_copied"])) > 0:
+            console.print(f"WARNING: Files in Database but not copied to Repo: {n}")
+        if (n := len(out["exist_repo_not_db"])) > 0:
+            console.print(f"ERROR:   Files in Repo but missing in Database: {n}")
+        if (n := len(out["exist_db_not_repo"])) > 0:
+            console.print(f"ERROR:   Files in Database but missing in Repo: {n}")
+        if (n := len(out["exist_repo_incorrect_name"])) > 0:
+            console.print(f"ERROR:   Files in Repo with incorrect name:     {n}")
+    print(out)
 
 
 if __name__ == "__main__":

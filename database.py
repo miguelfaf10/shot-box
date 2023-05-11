@@ -18,7 +18,7 @@ class PhotoModel(Base):
     __tablename__ = "photos"
     id = Column(Integer, primary_key=True)
     original_filepath = Column(String)
-    new_filepath = Column(String)
+    new_filepath = Column(String, default="")
     camera = Column(String)
     date_time = Column(DateTime)
     size = Column(Integer)
@@ -51,6 +51,37 @@ class PhotoDatabase:
             Base.metadata.create_all(bind=self.engine)
 
         self.session = sessionmaker(bind=self.engine)
+
+    def db_exists(self):
+        return bool(self.db_path.exists())
+
+    def db_valid(self) -> bool:
+        metadata = MetaData()
+        metadata.reflect(bind=self.engine)
+
+        tables_check = metadata.sorted_tables
+        tables_model = PhotoModel.metadata.sorted_tables
+
+        if len(tables_check) != len(tables_model):
+            logger.debug(
+                f"Database {str(db_path)} doesn't contain correct number of tables"
+            )
+            return False
+
+        for k, table_model in enumerate(tables_model):
+            if table_model.name != tables_check[k].name:
+                logger.debug(
+                    f"Database {str(db_path)} doesn't contain correct table's names"
+                )
+                return False
+
+            if set(table_model.columns.keys()) != set(tables_check[0].columns.keys()):
+                logger.debug(
+                    f"Database {str(db_path)} doesn't contain correct table's names"
+                )
+                return False
+
+        return True
 
     def add_photo(self, photo: PhotoModel):
         """Add a new photo to the database."""
@@ -109,34 +140,3 @@ class PhotoDatabase:
             }
             for photo in photos
         }
-
-    def db_exists(self):
-        return bool(self.db_path.exists())
-
-    def db_valid(self) -> bool:
-        metadata = MetaData()
-        metadata.reflect(bind=self.engine)
-
-        tables_check = metadata.sorted_tables
-        tables_model = PhotoModel.metadata.sorted_tables
-
-        if len(tables_check) != len(tables_model):
-            logger.debug(
-                f"Database {str(db_path)} doesn't contain correct number of tables"
-            )
-            return False
-
-        for k, table_model in enumerate(tables_model):
-            if table_model.name != tables_check[k].name:
-                logger.debug(
-                    f"Database {str(db_path)} doesn't contain correct table's names"
-                )
-                return False
-
-            if set(table_model.columns.keys()) != set(tables_check[0].columns.keys()):
-                logger.debug(
-                    f"Database {str(db_path)} doesn't contain correct table's names"
-                )
-                return False
-
-        return True
