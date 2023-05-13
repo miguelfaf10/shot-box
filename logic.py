@@ -8,11 +8,11 @@ import shutil
 import exifread
 import imagehash
 
+from infra.repository.photos_database import PhotoDatabase
+from infra.entities.photos import Photos
+from utils import get_logger, scan_folder
 from utils import get_location_from_gpscoord, get_gpscoord_from_exif
 from utils import generate_crypto_hash, generate_perceptual_hash
-
-from database import PhotoModel, PhotoDatabase
-from utils import get_logger, scan_folder
 
 # Create configure module   module_logger
 logger = get_logger(__name__)
@@ -142,33 +142,13 @@ class PhotoOrganizer:
             "files_exist": files_exist,
         }
 
-    # def add_image(self, image: Photo) -> None:
-    #     photo_model = PhotoModel(
-    #         original_filepath=image.tags["filepath"],
-    #         new_filepath="",
-    #         camera=image.tags["camera"],
-    #         date_time=image.tags["datetime"],
-    #         size=image.tags["size"],
-    #         width=image.tags["width"],
-    #         height=image.tags["height"],
-    #         resolution_units=image.tags["resolution_units"],
-    #         resolution_x=image.tags["resolution_x"],
-    #         resolution_y=image.tags["resolution_y"],
-    #         location_coord=image.tags["location_coord"],
-    #         location=image.tags["location"],
-    #         perceptual_hash=image.tags["perceptual_hash"],
-    #         crypto_hash=image.tags["crypto_hash"],
-    #     )
-
-    #     self.db.add_photo(photo_model)
-
     def process_file(self, image_path: Path, do_copy=True):
         # process all images found
         # analyse image and create logic.Photo object
         image_obj = Photo(image_path)
 
         # create image database object
-        image_db = PhotoModel(
+        image_db = Photos(
             original_filepath=image_obj.tags["filepath"],
             camera=image_obj.tags["camera"],
             date_time=image_obj.tags["datetime"],
@@ -187,7 +167,7 @@ class PhotoOrganizer:
         )
 
         # add image db object into database
-        n_perceptualhash = self.db.add_photo(image_db)
+        n_perceptualhash = self.db.insert_photo(image_db)
         if n_perceptualhash is None:
             return False
 
