@@ -10,7 +10,7 @@ def scan_folder(folder_path: Path, image_exts) -> List[Path]:
 
     return [
         file_path
-        for file_path in folder_path.glob("**/*")
+        for file_path in folder_path.glob("*")
         if file_path.is_file() and file_path.suffix.lower() in image_exts
     ]
 

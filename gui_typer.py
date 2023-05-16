@@ -3,14 +3,28 @@ import sys
 
 from pathlib import Path
 from typing import List
+import itertools
 import logging
 
 import typer
 from rich.console import Console
 from rich.segment import Segment
-from rich.progress import Progress
+from rich.table import Column
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    TaskID,
+    TextColumn,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+    MofNCompleteColumn,
+    SpinnerColumn,
+    TimeElapsedColumn,
+    TaskProgressColumn,
+)
 
-from PIL import Image
+from pyfiglet import Figlet
 
 from logic import PhotoOrganizer
 from utils import get_logger, scan_folder
@@ -25,6 +39,12 @@ logger = get_logger(__name__)
 
 app = typer.Typer()
 console = Console()
+figlet = Figlet(font="slant")
+
+
+def welcome():
+    figlet.width = 100
+    return f'{figlet.renderText("Shot Box")} {figlet.renderText("Photo - Organizer")}'
 
 
 class Repository:
@@ -96,41 +116,64 @@ def info(repo_str: str):
 
 @app.command()
 def add(repo_str: str, folder_lst: List[str]):
+    console.print(welcome())
+
     repo = start_repo(Path(repo_str))
 
     ignored_folders = []
     ignored_images = []
     processed_images = []
 
-    progress = Progress()
+    subfolder_lst = list(
+        itertools.chain.from_iterable(
+            Path(folder_str).glob("**/") for folder_str in folder_lst
+        )
+    )
+
+    progress = Progress(
+        # TextColumn("[bold blue]{task.fields[foldername]}", justify="right")
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        TimeElapsedColumn(),
+        TextColumn("{task.fields[foldername]}", table_column=Column(width=25)),
+        transient=True,
+    )
+
     with progress:
         console.print(progress)
-        add_folder_task = progress.add_task(
-            "[red]Adding folders: ", total=len(folder_lst)
-        )
 
-        for folder_str in folder_lst:
-            folder_path = Path(folder_str)
+        add_folder_task = progress.add_task("[red]Adding folders: ", foldername="...")
+        add_file_task = progress.add_task("[blue]Adding images:  ", foldername="...")
 
-            if not folder_path.exists():
-                ignored_folders.append(folder_path.name)
+        progress.update(add_folder_task, total=len(subfolder_lst))
+        for subfolder_path in subfolder_lst:
+            progress.update(
+                add_folder_task,
+                foldername=f"./{str(subfolder_path)}/",
+            )
+            if not subfolder_path.exists():
+                ignored_folders.append(subfolder_path.name)
                 continue
 
             # find all image files in folder and sub-folders
-            image_paths = scan_folder(folder_path, IMAGE_EXTENSIONS)
-            add_file_task = progress.add_task(
-                "[blue]Adding images:  ", total=len(image_paths)
-            )
+            image_paths = scan_folder(subfolder_path, IMAGE_EXTENSIONS)
 
+            progress.update(add_file_task, total=len(image_paths))
             for image_path in image_paths:
-                if "3904" in image_path.name:
-                    pass
-                progress.update(add_file_task, advance=1)
+                progress.update(
+                    add_file_task,
+                    foldername=image_path.name,
+                )
 
                 if not repo.photo_org.process_file(image_path):
                     ignored_images.append(image_path.name)
                 else:
                     processed_images.append(image_path.name)
+
+                progress.update(add_file_task, advance=1)
 
             progress.reset(add_file_task)
             progress.update(add_folder_task, advance=1)

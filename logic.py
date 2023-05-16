@@ -104,14 +104,21 @@ class Photo:
                 location_coord_str = f"{latitude:.6f};{longitude:.6f}"
                 location_str = get_location_from_gpscoord(latitude, longitude)
             else:
-                location_str = "unknown_location"
-                location_coord_str = "unknown_location"
+                location_str = "unknown"
+                location_coord_str = "unknown"
         else:
-            location_str = "unknown_location"
-            location_coord_str = "unknown_location"
+            location_str = "unknown"
+            location_coord_str = "unknown"
 
         tags["location_coord"] = location_coord_str
-        tags["location"] = location_str
+        if location_coord_str is not "unknown":
+            tags["location_country"] = location_str.split(";")[0]
+            tags["location_region"] = location_str.split(";")[1]
+            tags["location_city"] = location_str.split(";")[2]
+        else:
+            tags["location_country"] = None
+            tags["location_region"] = None
+            tags["location_city"] = None
 
         # generate image hash ids
         tags["perceptual_hash"] = generate_perceptual_hash(self.filepath)
@@ -159,7 +166,9 @@ class PhotoOrganizer:
             resolution_x=image_obj.tags["resolution_x"],
             resolution_y=image_obj.tags["resolution_y"],
             location_coord=image_obj.tags["location_coord"],
-            location=image_obj.tags["location"],
+            location_country=image_obj.tags["location_country"],
+            location_region=image_obj.tags["location_region"],
+            location_city=image_obj.tags["location_city"],
             perceptual_hash=image_obj.tags["perceptual_hash"],
             crypto_hash=image_obj.tags["crypto_hash"],
             new_filepath="",
@@ -173,6 +182,8 @@ class PhotoOrganizer:
 
         # copy image files into repository
         if do_copy:
+            # Determine the destination folder based on the image's datetime metadata
+            # or use a default folder if the datetime is not available
             dest_folder = (
                 self.repo_path.joinpath(
                     str(image_obj.tags["datetime"].year),
@@ -183,15 +194,20 @@ class PhotoOrganizer:
             )
             dest_folder.mkdir(parents=True, exist_ok=True)
 
+            # Generate the destination filename using the perceptual hash and n_perceptualhash values
             dest_name = f"{image_obj.tags['perceptual_hash']}_{n_perceptualhash}"
             extension = Path(image_obj.tags["filepath"]).suffix[1:]
 
+            # Construct the destination filepath by joining the destination folder and filename
             dest_filename = f"{dest_name}.{extension.upper()}"
             dest_filepath = dest_folder.joinpath(dest_filename).absolute()
 
             if not dest_filepath.exists():
                 try:
+                    # Copy the image file from the original filepath to the destination filepath
                     shutil.copy(str(image_obj.tags["filepath"]), str(dest_filepath))
+
+                    # Update the new_filepath attribute of the image in the database
                     self.db.update_photo_newpath(
                         image_obj.tags["crypto_hash"], dest_filepath
                     )
