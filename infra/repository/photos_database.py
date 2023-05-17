@@ -97,7 +97,7 @@ class PhotoDatabase:
             else:
                 return None
 
-    def update_photo_newpath(self, crypto_hash: str, newpath: Path):
+    def update_newpath(self, crypto_hash: str, newpath: Path):
         """Update the new filepath of a photo in the database, which is queried
         using the unique field crypto_hash.
 
@@ -150,6 +150,27 @@ class PhotoDatabase:
 
         return photo
 
+    def search_by_location(self, country=None, region=None, city=None):
+        """Search a photo in the database by location
+
+        Args:
+            country:
+            region:
+            city:
+
+        Returns:
+            Photos: The photos matching the perceptual hash, or None if not found.
+        """
+        with DBConnectionHandler(self.db_path) as db:
+            photo = (
+                db.session.query(Photos)
+                .filter_by()
+                .filter_by(location_country=country, location_region=region)
+                .all()
+            )
+
+        return photo
+
     def get_all(self) -> List[Photos]:
         """Retrieve all photos from the database.
 
@@ -161,7 +182,7 @@ class PhotoDatabase:
 
         return photos
 
-    def get_photos_paths(self) -> Dict[str, Dict[str, str]]:
+    def get_all_newpaths(self) -> Dict[str, Dict[str, str]]:
         """Retrieve the repository file paths for all photos in the database.
 
         Returns:

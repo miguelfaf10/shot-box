@@ -1,8 +1,14 @@
 from pathlib import Path
 from typing import List, Tuple
 import logging
+import re
 from rich.logging import RichHandler
 from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut
+
+from PIL import Image
+import imagehash
+import hashlib
 
 
 def scan_folder(folder_path: Path, image_exts) -> List[Path]:
@@ -15,21 +21,37 @@ def scan_folder(folder_path: Path, image_exts) -> List[Path]:
     ]
 
 
+def parse_fraction_str(rational_str: str):
+    number_pattern = re.compile(r"(\d+)(?:/(\d+))?")
+    matches = number_pattern.match(rational_str)
+    if matches:
+        number1 = float(matches.group(1))
+        number2 = float(matches.group(2)) if matches.group(2) else 1
+
+    if number2 != 0:
+        return number1 / number2
+    elif number1 == 0:
+        return 0
+    else:
+        raise ZeroDivisionError
+
+
+def parse_exifcoord_str(exif_coord_str: str):
+    try:
+        deg_frac_str, min_frac_str, sec_frac_str = exif_coord_str.strip("[]").split(
+            ", "
+        )
+        deg = parse_fraction_str(deg_frac_str)
+        min = parse_fraction_str(min_frac_str)
+        sec = parse_fraction_str(sec_frac_str)
+
+        return deg + min / 60 + sec / 3600
+
+    except Exception:
+        return None
+
+
 def get_gpscoord_from_exif(exif_tags: str) -> Tuple[float, float]:
-    def parse_coordinate_str(exif_coord_str: str):
-        try:
-            deg, min, sec_fraction = exif_coord_str.strip("[]").split(", ")
-            if "/" in sec_fraction:
-                sec_numerator, sec_denominator = sec_fraction.split("/")
-                sec = float(sec_numerator) / float(sec_denominator)
-            else:
-                sec = float(sec_fraction)
-
-            return float(deg) + float(min) / 60 + sec / 3600
-
-        except Exception:
-            return None
-
     if exif_tags.get("GPS GPSLongitude"):
         lon_abs_exif_str = exif_tags["GPS GPSLongitude"].printable
     else:
@@ -50,10 +72,10 @@ def get_gpscoord_from_exif(exif_tags: str) -> Tuple[float, float]:
     else:
         return None, None
 
-    latitude = parse_coordinate_str(lat_abs_exif_str) * (
+    latitude = parse_exifcoord_str(lat_abs_exif_str) * (
         1 if lat_ref_exif_str.upper() == "N" else -1
     )
-    longitude = parse_coordinate_str(lon_abs_exif_str) * (
+    longitude = parse_exifcoord_str(lon_abs_exif_str) * (
         1 if lon_ref_exif_str.upper() == "E" else -1
     )
 
@@ -61,23 +83,20 @@ def get_gpscoord_from_exif(exif_tags: str) -> Tuple[float, float]:
 
 
 def get_location_from_gpscoord(latitude, longitude):
-    if not (latitude and longitude):
-        return "unknown_location"
+    if not latitude or not longitude:
+        return "unknown"
 
-    geolocator = Nominatim(user_agent="my_app")
-    if location := geolocator.reverse(f"{latitude}, {longitude}", exactly_one=True):
+    try:
+        geolocator = Nominatim(user_agent="my_app", timeout=1)
+
+        location = geolocator.reverse(f"{latitude}, {longitude}", exactly_one=True)
         address = location.raw["address"]
         city = address.get("city", "")
         region = address.get("state", "")
         country = address.get("country", "")
         return f"{country};{region};{city}"
-    else:
-        return "unknown_location"
-
-
-from PIL import Image
-import imagehash
-import hashlib
+    except Exception as E:
+        return "unknown"
 
 
 def generate_perceptual_hash(image_path: Path, method: str = "phash") -> str:

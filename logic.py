@@ -111,7 +111,7 @@ class Photo:
             location_coord_str = "unknown"
 
         tags["location_coord"] = location_coord_str
-        if location_coord_str is not "unknown":
+        if location_str != "unknown":
             tags["location_country"] = location_str.split(";")[0]
             tags["location_region"] = location_str.split(";")[1]
             tags["location_city"] = location_str.split(";")[2]
@@ -208,9 +208,7 @@ class PhotoOrganizer:
                     shutil.copy(str(image_obj.tags["filepath"]), str(dest_filepath))
 
                     # Update the new_filepath attribute of the image in the database
-                    self.db.update_photo_newpath(
-                        image_obj.tags["crypto_hash"], dest_filepath
-                    )
+                    self.db.update_newpath(image_obj.tags["crypto_hash"], dest_filepath)
                 except Exception:
                     logger.error(Exception)
                     return False
@@ -221,8 +219,9 @@ class PhotoOrganizer:
             return True
 
     def filter_photos(self, search_tags: Dict[str, str]) -> List[Photo]:
-        filtered_photos = []
-        # Code for filtering photos based on search tags
+        if search_tags.get("country"):
+            filtered_photos = self.db.search_by_location(country=search_tags["country"])
+
         return filtered_photos
 
     def display_photos(self, photos: List[Photo]) -> None:

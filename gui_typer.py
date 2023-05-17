@@ -207,5 +207,15 @@ def verify(repo_str: str):
     print(out)
 
 
+@app.command()
+def find(repo_str: str, tag: str, value: str):
+    repo = start_repo(Path(repo_str))
+
+    if tag == "country":
+        out = repo.photo_org.filter_photos({"country": value})
+
+    print(out)
+
+
 if __name__ == "__main__":
     app()
