@@ -7,6 +7,10 @@ from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
 
 from PIL import Image
+from pillow_heif import register_heif_opener
+
+register_heif_opener()
+
 import imagehash
 import hashlib
 
@@ -21,7 +25,7 @@ def scan_folder(folder_path: Path, image_exts) -> List[Path]:
     ]
 
 
-def parse_fraction_str(rational_str: str):
+def extract_fraction(rational_str: str):
     number_pattern = re.compile(r"(\d+)(?:/(\d+))?")
     matches = number_pattern.match(rational_str)
     if matches:
@@ -36,14 +40,25 @@ def parse_fraction_str(rational_str: str):
         raise ZeroDivisionError
 
 
+def extract_first_integer(string):
+    match_1 = re.match(r"(\d+)", string)  # case of integer e.g.'3434'
+    match_2 = re.match(r"\[(\d+),", string)  # case of '[123,0]'
+    if match_1:
+        return int(match_1[1])
+    elif match_2:
+        return int(match_2[1])
+    else:
+        return None
+
+
 def parse_exifcoord_str(exif_coord_str: str):
     try:
         deg_frac_str, min_frac_str, sec_frac_str = exif_coord_str.strip("[]").split(
             ", "
         )
-        deg = parse_fraction_str(deg_frac_str)
-        min = parse_fraction_str(min_frac_str)
-        sec = parse_fraction_str(sec_frac_str)
+        deg = extract_fraction(deg_frac_str)
+        min = extract_fraction(min_frac_str)
+        sec = extract_fraction(sec_frac_str)
 
         return deg + min / 60 + sec / 3600
 
@@ -91,10 +106,10 @@ def get_location_from_gpscoord(latitude, longitude):
 
         location = geolocator.reverse(f"{latitude}, {longitude}", exactly_one=True)
         address = location.raw["address"]
-        city = address.get("city", "")
-        region = address.get("state", "")
-        country = address.get("country", "")
-        return f"{country};{region};{city}"
+        city = address.get("city")
+        region = address.get("state")
+        country = address.get("country")
+        return (country, region, city)
     except Exception as E:
         return "unknown"
 
@@ -158,7 +173,7 @@ def get_logger(name):
     formatter = logging.Formatter(
         "%(asctime)s -  [%(filename)s:%(lineno)d] - %(levelname)s - %(message)s"
     )
-    handler = logging.FileHandler("logs/log.log", mode="a")
+    handler = logging.FileHandler("/home/miguel/sw/shot-box/logs/log.log", mode="a")
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 

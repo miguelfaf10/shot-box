@@ -12,12 +12,9 @@ from rich.segment import Segment
 from rich.table import Column
 from rich.progress import (
     BarColumn,
-    DownloadColumn,
     Progress,
-    TaskID,
     TextColumn,
     TimeRemainingColumn,
-    TransferSpeedColumn,
     MofNCompleteColumn,
     SpinnerColumn,
     TimeElapsedColumn,
@@ -31,7 +28,17 @@ from utils import get_logger, scan_folder
 
 
 DB_FILE_NAME = "photo.db"
-IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".bmp"]
+IMAGE_EXTENSIONS = [
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".bmp",
+    ".tif",
+    ".tiff",
+    ".heif",
+    ".raw",
+]
 
 
 # Create configure module   module_logger
@@ -213,7 +220,7 @@ def find(repo_str: str, tag: str, value: str):
 
     if tag == "country":
         out = repo.photo_org.filter_photos({"country": value})
-
+        print(type(out[0].width))
     print(out)
 
 

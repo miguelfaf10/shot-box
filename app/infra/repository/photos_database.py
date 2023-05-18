@@ -3,11 +3,11 @@ from datetime import datetime
 from typing import List, Dict
 
 from sqlalchemy import MetaData
-from infra.configs.base import Base
-from infra.configs.connection import DBConnectionHandler
-from infra.entities.photos import Photos
+from app.infra.configs.base import Base
+from app.infra.configs.connection import DBConnectionHandler
+from app.infra.entities.photos import Photos
 
-from utils import get_logger
+from app.utils import get_logger
 
 logger = get_logger(__name__)
 
@@ -162,12 +162,7 @@ class PhotoDatabase:
             Photos: The photos matching the perceptual hash, or None if not found.
         """
         with DBConnectionHandler(self.db_path) as db:
-            photo = (
-                db.session.query(Photos)
-                .filter_by()
-                .filter_by(location_country=country, location_region=region)
-                .all()
-            )
+            photo = db.session.query(Photos).filter_by(location_country=country).all()
 
         return photo
 

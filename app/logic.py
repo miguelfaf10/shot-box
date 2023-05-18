@@ -8,14 +8,32 @@ import shutil
 import exifread
 import imagehash
 
-from infra.repository.photos_database import PhotoDatabase
-from infra.entities.photos import Photos
-from utils import get_logger, scan_folder
-from utils import get_location_from_gpscoord, get_gpscoord_from_exif
-from utils import generate_crypto_hash, generate_perceptual_hash
+from app.infra.repository.photos_database import PhotoDatabase
+from app.infra.entities.photos import Photos
+
+from app.utils import (
+    get_logger,
+    scan_folder,
+    get_location_from_gpscoord,
+    get_gpscoord_from_exif,
+    generate_crypto_hash,
+    generate_perceptual_hash,
+    extract_first_integer,
+)
 
 # Create configure module   module_logger
 logger = get_logger(__name__)
+
+file_types = {
+    ".jpg": "jpeg",
+    ".jpeg": "jpeg",
+    ".raw": "raw",
+    ".png": "png",
+    ".bmp": "bmp",
+    ".tif": "tiff",
+    ".tiff": "tiff",
+    ".heif": "heif",
+}
 
 
 class Photo:
@@ -50,75 +68,97 @@ class Photo:
         """
         # Read the Exif data from the photo file
         with open(str(self.filepath), "rb") as f:
-            exif_tags = exifread.process_file(f, details=False)
+            try:
+                exif_tags = exifread.process_file(f, details=False)
+            except Exception as e:
+                print(f"Error reading EXIF from {self.filepath.name}")
+                exif_tags = {}
 
-        # Initialize a dictionary to store the tags
-        tags = {}
+        # Initialize a dictionary and store first tags
+        tags = {
+            "filepath": str(self.filepath),  # filepath
+            "size": self.filepath.stat().st_size,  # file size
+            "file_type": file_types[self.filepath.suffix.lower()],  # file type
+        }
 
-        # file information
-        tags["filepath"] = str(self.filepath)
+        # next tags are all obtained from EXIF
 
-        # exif image information
+        # camera
         tags["camera"] = (
             exif_tags["Image Model"].printable if exif_tags.get("Image Model") else None
         )
-        tags["datetime"] = (
-            datetime.strptime(
+
+        # datetime
+        if exif_tags.get("EXIF DateTimeOriginal"):
+            tags["datetime"] = datetime.strptime(
                 exif_tags["EXIF DateTimeOriginal"].printable, "%Y:%m:%d %H:%M:%S"
             )
-            if exif_tags.get("EXIF DateTimeOriginal")
-            else None
-        )
-        tags["size"] = self.filepath.stat().st_size
-        tags["width"] = (
-            exif_tags["EXIF ExifImageWidth"].printable
-            if exif_tags.get("EXIF ExifImageWidth")
-            else None
-        )
-        tags["height"] = (
-            exif_tags["EXIF ExifImageLength"].printable
-            if exif_tags.get("EXIF ExifImageLength")
-            else None
-        )
+        elif exif_tags.get("Image DateTime"):
+            tags["datetime"] = datetime.strptime(
+                exif_tags["Image DateTime"].printable, "%Y:%m:%d %H:%M:%S"
+            )
+        else:
+            tags["datetime"] = None
+
+        # width
+        if exif_tags.get("EXIF ExifImageWidth"):
+            tags["width"] = extract_first_integer(
+                exif_tags["EXIF ExifImageWidth"].printable
+            )
+        elif exif_tags.get("Image ImageWidth"):
+            tags["width"] = extract_first_integer(
+                exif_tags["Image ImageWidth"].printable
+            )
+        else:
+            tags["width"] = None
+
+        # height
+        if exif_tags.get("EXIF ExifImageLength"):
+            tags["height"] = extract_first_integer(
+                exif_tags["EXIF ExifImageLength"].printable
+            )
+        elif exif_tags.get("Image ImageLength"):
+            tags["height"] = extract_first_integer(
+                exif_tags["Image ImageLength"].printable
+            )
+        else:
+            tags["height"] = None
+
+        # resolution units
         tags["resolution_units"] = (
             exif_tags["Image ResolutionUnit"].printable
             if exif_tags.get("Image ResolutionUnit")
             else None
         )
+        # resolution X
         tags["resolution_x"] = (
-            exif_tags["Image XResolution"].printable
+            int(exif_tags["Image XResolution"].printable)
             if exif_tags.get("Image XResolution")
             else None
         )
+        # resolution Y
         tags["resolution_y"] = (
-            exif_tags["Image YResolution"].printable
+            int(exif_tags["Image YResolution"].printable)
             if exif_tags.get("Image YResolution")
             else None
         )
 
-        # extract exif GPS information if available
+        # GPS information
+        country, region, city = None, None, None
         if exif_tags.get("Image GPSInfo"):
             latitude, longitude = get_gpscoord_from_exif(exif_tags)
 
             if latitude and longitude:
                 location_coord_str = f"{latitude:.6f};{longitude:.6f}"
-                location_str = get_location_from_gpscoord(latitude, longitude)
+                country, region, city = get_location_from_gpscoord(latitude, longitude)
             else:
-                location_str = "unknown"
                 location_coord_str = "unknown"
         else:
-            location_str = "unknown"
             location_coord_str = "unknown"
-
         tags["location_coord"] = location_coord_str
-        if location_str != "unknown":
-            tags["location_country"] = location_str.split(";")[0]
-            tags["location_region"] = location_str.split(";")[1]
-            tags["location_city"] = location_str.split(";")[2]
-        else:
-            tags["location_country"] = None
-            tags["location_region"] = None
-            tags["location_city"] = None
+        tags["location_country"] = country or None
+        tags["location_region"] = region or None
+        tags["location_city"] = city or None
 
         # generate image hash ids
         tags["perceptual_hash"] = generate_perceptual_hash(self.filepath)
@@ -159,6 +199,7 @@ class PhotoOrganizer:
             original_filepath=image_obj.tags["filepath"],
             camera=image_obj.tags["camera"],
             date_time=image_obj.tags["datetime"],
+            file_type=image_obj.tags["file_type"],
             size=image_obj.tags["size"],
             width=image_obj.tags["width"],
             height=image_obj.tags["height"],
