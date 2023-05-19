@@ -2,6 +2,8 @@ from pathlib import Path
 from typing import List, Tuple
 import logging
 import re
+import yaml
+
 from rich.logging import RichHandler
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut
@@ -13,6 +15,17 @@ register_heif_opener()
 
 import imagehash
 import hashlib
+
+
+with open("app/config.yaml") as file:
+    config = yaml.safe_load(file)
+
+
+def get_type(image_ext):
+    for key, value in config["image"]["types"].items():
+        if image_ext in value:
+            return key
+    return None
 
 
 def scan_folder(folder_path: Path, image_exts) -> List[Path]:

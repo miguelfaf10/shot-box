@@ -1,5 +1,7 @@
 import base64
+
 import sys
+import yaml
 
 from pathlib import Path
 from typing import List
@@ -26,20 +28,17 @@ from pyfiglet import Figlet
 from logic import ImageOrganizer
 from utils import get_logger, scan_folder
 
+# configuration parameters
+with open("app/config.yaml") as file:
+    config = yaml.safe_load(file)
 
-DB_FILE_NAME = "photo.db"
-IMAGE_EXTENSIONS = [
-    ".jpg",
-    ".jpeg",
-    ".png",
-    ".gif",
-    ".bmp",
-    ".tif",
-    ".tiff",
-    ".heif",
-    ".raw",
-]
-
+DB_FILE = config["database"]["file"]
+DB_FOLDER = config["database"]["folder"]
+IMAGE_EXTS = list(
+    itertools.chain.from_iterable(
+        values for values in config["image"]["types"].values()
+    )
+)
 
 # Create configure module   module_logger
 logger = get_logger(__name__)
@@ -57,7 +56,7 @@ def welcome():
 class Repository:
     def __init__(self, repo_path: Path):
         self.repo_path = repo_path.absolute()
-        self.db_path = repo_path.joinpath(f".photo-organizer/{DB_FILE_NAME}")
+        self.db_path = repo_path.joinpath(DB_FOLDER).joinpath(DB_FILE)
         if not self.check_repo():
             self.create_repo()
             console.print(f"Repo created at {str(self.repo_path)}")
@@ -166,7 +165,7 @@ def add(repo_str: str, folder_lst: List[str]):
                 continue
 
             # find all image files in folder and sub-folders
-            image_paths = scan_folder(subfolder_path, IMAGE_EXTENSIONS)
+            image_paths = scan_folder(subfolder_path, IMAGE_EXTS)
 
             progress.update(add_file_task, total=len(image_paths))
             for image_path in image_paths:
@@ -198,7 +197,7 @@ def add(repo_str: str, folder_lst: List[str]):
 def verify(repo_str: str):
     repo = start_repo(Path(repo_str))
 
-    out = repo.photo_org.check_consistency(IMAGE_EXTENSIONS)
+    out = repo.photo_org.check_consistency(IMAGE_EXTS)
 
     if sum((len(num) for num in out.values())) == 0:
         console.print("Repository is in perfect shape!")

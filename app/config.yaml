@@ -1,0 +1,21 @@
+database:
+  file: "image.db"
+  folder: ".photo-organizer"
+image:
+  types:
+    JPG : 
+      - '.jpg'
+      - '.jpeg'
+    TIF:
+      - '.tif'
+      - '.tiff'
+    BMP:
+      - ".bmp"
+    PNG:
+      - ".png"
+    GIF:
+      - ".gif"
+    RAW:
+      - ".raw"
+    HEIF:
+      - ".heif"

@@ -2,6 +2,8 @@ from pathlib import Path
 from datetime import datetime
 from pprint import pformat
 from typing import Dict, List
+import yaml
+
 
 import shutil
 
@@ -19,21 +21,11 @@ from app.utils import (
     generate_crypto_hash,
     generate_perceptual_hash,
     extract_first_integer,
+    get_type,
 )
 
 # Create configure module   module_logger
 logger = get_logger(__name__)
-
-file_types = {
-    ".jpg": "jpeg",
-    ".jpeg": "jpeg",
-    ".raw": "raw",
-    ".png": "png",
-    ".bmp": "bmp",
-    ".tif": "tiff",
-    ".tiff": "tiff",
-    ".heif": "heif",
-}
 
 
 class Image:
@@ -78,10 +70,10 @@ class Image:
         tags = {
             "filepath": str(self.filepath),  # filepath
             "size": self.filepath.stat().st_size,  # file size
-            "file_type": file_types[self.filepath.suffix.lower()],  # file type
+            "file_type": get_type(self.filepath.suffix.lower()),  # file type
         }
 
-        # next tags are all obtained from EXIF
+        # following tags are all obtained from EXIF
 
         # camera
         tags["camera"] = (
