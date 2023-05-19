@@ -36,7 +36,7 @@ file_types = {
 }
 
 
-class Photo:
+class Image:
     """
     A class representing a photo and its associated tags.
 
@@ -167,13 +167,31 @@ class Photo:
         return tags
 
 
-class PhotoOrganizer:
+class ImageOrganizer:
     def __init__(self, repo_path: Path, db_path: Path):
+        """Initialize the PhotoOrganizer object.
+
+        Args:
+            repo_path (Path): The path to the repository where photos will be copied.
+            db_path (Path): The path to the SQLite database file.
+
+        Returns:
+            None
+        """
         self.repo_path = repo_path
         self.db_path = db_path
         self.db = PhotoDatabase(self.db_path)
 
     def get_info(self):
+        """
+        Get information about the photos in the database.
+
+        Returns:
+            dict: A dictionary containing information about the photos.
+                - "total_photos" (int): The total number of photos in the database.
+                - "total_size" (int): The total size of all the photos in bytes.
+                - "files_exist" (int): The number of photos whose new file path exists in the repository.
+        """
         photos = self.db.get_all()
 
         total_photos = len(photos)
@@ -192,13 +210,13 @@ class PhotoOrganizer:
     def process_file(self, image_path: Path, do_copy=True):
         # process all images found
         # analyse image and create logic.Photo object
-        image_obj = Photo(image_path)
+        image_obj = Image(image_path)
 
         # create image database object
         image_db = Photos(
             original_filepath=image_obj.tags["filepath"],
             camera=image_obj.tags["camera"],
-            date_time=image_obj.tags["datetime"],
+            datetime=image_obj.tags["datetime"],
             file_type=image_obj.tags["file_type"],
             size=image_obj.tags["size"],
             width=image_obj.tags["width"],
@@ -217,7 +235,7 @@ class PhotoOrganizer:
         )
 
         # add image db object into database
-        n_perceptualhash = self.db.insert_photo(image_db)
+        n_perceptualhash = self.db.insert_image(image_db)
         if n_perceptualhash is None:
             return False
 
@@ -259,13 +277,13 @@ class PhotoOrganizer:
 
             return True
 
-    def filter_photos(self, search_tags: Dict[str, str]) -> List[Photo]:
+    def filter_photos(self, search_tags: Dict[str, str]) -> List[Image]:
         if search_tags.get("country"):
             filtered_photos = self.db.search_by_location(country=search_tags["country"])
 
         return filtered_photos
 
-    def display_photos(self, photos: List[Photo]) -> None:
+    def display_photos(self, photos: List[Image]) -> None:
         pass
         # Code for displaying selected photos
 

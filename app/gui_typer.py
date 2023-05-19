@@ -23,7 +23,7 @@ from rich.progress import (
 
 from pyfiglet import Figlet
 
-from logic import PhotoOrganizer
+from logic import ImageOrganizer
 from utils import get_logger, scan_folder
 
 
@@ -63,7 +63,7 @@ class Repository:
             console.print(f"Repo created at {str(self.repo_path)}")
         else:
             console.print(f"Repo folder at {str(self.repo_path)} exists")
-        self.photo_org = PhotoOrganizer(self.repo_path, self.db_path)
+        self.photo_org = ImageOrganizer(self.repo_path, self.db_path)
 
     def check_repo(self):
         if not (self.repo_path.exists() and self.db_path.parent.exists()):

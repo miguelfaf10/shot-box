@@ -66,7 +66,7 @@ class PhotoDatabase:
 
         return True
 
-    def insert_photo(self, photo: Photos):
+    def insert_image(self, photo: Photos):
         """Insert a new photo to the database. It first verifies if an entry with
         same perceptual_hash key already exists and fills in the n_perceptual_hash
         field accordingly.
@@ -126,7 +126,7 @@ class PhotoDatabase:
         with DBConnectionHandler(self.db_path) as db:
             photos = (
                 db.session.query(Photos)
-                .filter(Photos.date_time.between(start_date, end_date))
+                .filter(Photos.datetime.between(start_date, end_date))
                 .all()
             )
 

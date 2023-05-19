@@ -10,7 +10,7 @@ if "photos" not in Base.metadata.tables:
         id = Column(Integer, primary_key=True)
         original_filepath = Column(String, nullable=False)
         camera = Column(String)
-        date_time = Column(DateTime)
+        datetime = Column(DateTime)
         file_type = Column(String)
         size = Column(Integer)
         width = Column(Integer)
