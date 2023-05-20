@@ -28,12 +28,14 @@ def get_type(image_ext):
     return None
 
 
-def scan_folder(folder_path: Path, image_exts) -> List[Path]:
+def scan_folder(folder_path: Path, image_exts, recursive=False) -> List[Path]:
     # Add new photo folders to the database
+
+    file_list = folder_path.glob("**/*") if recursive else folder_path.glob("*")
 
     return [
         file_path
-        for file_path in folder_path.glob("*")
+        for file_path in file_list
         if file_path.is_file() and file_path.suffix.lower() in image_exts
     ]
 

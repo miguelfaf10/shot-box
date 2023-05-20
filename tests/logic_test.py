@@ -1,6 +1,8 @@
 import yaml
 import itertools
 import pytest
+from unittest.mock import MagicMock
+
 from pathlib import Path
 from datetime import datetime
 
@@ -8,8 +10,8 @@ import numpy as np
 import pandas as pd
 
 from app.logic import Image, ImageOrganizer
-from app.infra.repository.photos_database import PhotoDatabase
-
+from app.infra.repository.image_database import ImageDatabase
+from app.infra.entities.image_model import ImageModel
 
 # configuration parameters
 with open("app/config.yaml") as file:
@@ -53,7 +55,7 @@ def allimage_data(data_file):
     return pd.read_excel(data_file).replace({np.nan: None})
 
 
-class TestPhoto:
+class TestImage:
     def test_generate_tags(self, allimage_paths, allimage_data):
         for image_path in allimage_paths:
             print("Image file being processed: ", image_path.name)
@@ -88,27 +90,48 @@ class TestPhoto:
             assert image.tags["crypto_hash"] == data["crypto_hash"].values[0]
 
 
-# @pytest.fixture
-# def image_repo(tmp_path):
-#     tmp_path.mkdir()
-#     tmp_path.joinpath(".photo-organizer/")
+class TestImageOrganizer:
+    # @pytest.fixture(scope="class")
+    # def image_organizer(tmp_path):
+    #     path = tmp_path
+    #     organizer = ImageOrganizer(path, path.joinpath(DB_FOLDER).joinpath(DB_FILE))
+    #     return organizer
 
+    # test with non-existing folder
+    def test_get_info_no_folder(self, tmp_path):
+        db_path = tmp_path / DB_FOLDER / DB_FILE
 
-# class TestPhotoOrganizer:
-#     def test_get_info(self, tmp_path):
-#         # Create a mock PhotoDatabase instance and set its get_all method to return sample data
-#         self.organizer.db.get_all = MagicMock(
-#             return_value=[
-#                 ImageModel(size=100, new_filepath="path1"),
-#                 ImageModel(size=200, new_filepath="path2"),
-#                 ImageModel(size=300, new_filepath="path3"),
-#             ]
-#         )
+        image_organizer = ImageOrganizer(tmp_path, db_path)
+        assert image_organizer.db is None
+        result = image_organizer.get_info()
+        assert result is None
 
-#         expected_result = {"total_photos": 3, "total_size": 600, "files_exist": 3}
+    # test with existing folder, empty database
+    def test_get_info_db_empty(self, tmp_path):
+        db_path = tmp_path / DB_FOLDER / DB_FILE
 
-#         result = self.organizer.get_info()
-#         self.assertEqual(result, expected_result)
+        db_path.parent.mkdir(parents=True)
+        image_organizer = ImageOrganizer(tmp_path, db_path)
+        expected_result = {"total_photos": 0, "total_size": 0, "files_exist": 0}
+        result = image_organizer.get_info()
+        assert result == expected_result
+
+    # test with populated database
+    def test_get_info_db_populated(self, tmp_path):
+        db_path = tmp_path / DB_FOLDER / DB_FILE
+
+        db_path.parent.mkdir(parents=True)
+        image_organizer = ImageOrganizer(tmp_path, db_path)
+        image_organizer.db.get_all = MagicMock(
+            return_value=[
+                ImageModel(size=100, new_filepath="path1"),
+                ImageModel(size=200, new_filepath="path2"),
+                ImageModel(size=300, new_filepath="path3"),
+            ]
+        )
+        expected_result = {"total_photos": 3, "total_size": 600, "files_exist": 3}
+        result = image_organizer.get_info()
+        assert result == expected_result
 
 
 #     @patch("app.logic.Photo")
@@ -162,3 +185,50 @@ class TestPhoto:
 #             height=1080,
 #             resolution_units="dpi",
 #             resolution_x
+
+
+# @pytest.fixture
+# def db_get_3():
+#     MagicMock(
+#         return_value=[
+#             ImageModel(id = 0,
+#                        original_filepath = "test",
+#                        camera = "test",
+#                        datetime = datetime(2000,10,10,10,10,10),
+#                        file_type = "JPG",
+#                        size = 100,
+#                        width = 10,
+#                        height = 10,
+#                        resolution_units = "px/cm",
+#                        resolution_x = 50,
+#                        resolution_y = 50,
+#                        location_coord = ,
+#                        location_country = ,
+#                        location_region = ,
+#                        location_city = ,
+#                        perceptual_hash = ,
+#                        crypto_hash = ,
+#                        new_filepath = ,
+#                        n_perceptual_hash = ),
+#             ImageModel(id = ,
+#                        original_filepath = ,
+#                        camera = ,
+#                        datetime = ,
+#                        file_type = ,
+#                        size = ,
+#                        width = ,
+#                        height = ,
+#                        resolution_units = ,
+#                        resolution_x = ,
+#                        resolution_y = ,
+#                        location_coord = ,
+#                        location_country = ,
+#                        location_region = ,
+#                        location_city = ,
+#                        perceptual_hash = ,
+#                        crypto_hash = ,
+#                        new_filepath = ,
+#                        n_perceptual_hash = ),
+
+#         ]
+#     )

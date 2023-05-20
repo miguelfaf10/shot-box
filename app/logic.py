@@ -10,8 +10,8 @@ import shutil
 import exifread
 import imagehash
 
-from app.infra.repository.photos_database import PhotoDatabase
-from app.infra.entities.photos import Photos
+from app.infra.repository.image_database import ImageDatabase
+from app.infra.entities.image_model import ImageModel
 
 from app.utils import (
     get_logger,
@@ -172,7 +172,7 @@ class ImageOrganizer:
         """
         self.repo_path = repo_path
         self.db_path = db_path
-        self.db = PhotoDatabase(self.db_path)
+        self.db = ImageDatabase(self.db_path) if self.db_path.parent.exists() else None
 
     def get_info(self):
         """
@@ -184,6 +184,9 @@ class ImageOrganizer:
                 - "total_size" (int): The total size of all the photos in bytes.
                 - "files_exist" (int): The number of photos whose new file path exists in the repository.
         """
+        if not self.db:
+            return None
+
         photos = self.db.get_all()
 
         total_photos = len(photos)
@@ -205,7 +208,7 @@ class ImageOrganizer:
         image_obj = Image(image_path)
 
         # create image database object
-        image_db = Photos(
+        image_db = ImageModel(
             original_filepath=image_obj.tags["filepath"],
             camera=image_obj.tags["camera"],
             datetime=image_obj.tags["datetime"],
@@ -276,7 +279,7 @@ class ImageOrganizer:
         return filtered_photos
 
     def display_photos(self, photos: List[Image]) -> None:
-        pass
+        raise NotImplemented
         # Code for displaying selected photos
 
     def check_consistency(self, image_ext):
@@ -285,7 +288,7 @@ class ImageOrganizer:
         exist_db_not_copied = []
         exist_db_not_repo = []
         exist_repo_incorrect_image = []
-        exist_repo_not_db = scan_folder(self.repo_path, image_ext)
+        exist_repo_not_db = scan_folder(self.repo_path, image_ext, recursive=True)
 
         for row in rows:
             # check db entries

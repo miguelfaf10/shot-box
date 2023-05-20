@@ -78,8 +78,7 @@ class Repository:
 @app.command()
 def create(repo_str: str):
     """
-    Creates a photo repository with the given path. If the path already exists, it logs the message and prints a message to the console
-    If it doesn't exist, it creates a new photo repository at the path and logs a message and prints a message to the console.
+    Creates an image repository in provided folder if this doesn't exist already.
 
     Args:
     path_str: A string representing the path where to create the photo repository.
@@ -112,6 +111,14 @@ def start_repo(repo_path: Path):
 
 @app.command()
 def info(repo_str: str):
+    """Diplay information about image repository if this exists in provided folder.
+
+    Args:
+        repo_str (str): filesystem path to repository folder
+
+    Returns:
+        Repository: repo object
+    """
     repo = start_repo(Path(repo_str))
 
     info = repo.photo_org.get_info()
@@ -122,6 +129,14 @@ def info(repo_str: str):
 
 @app.command()
 def add(repo_str: str, folder_lst: List[str]):
+    """Add new images from input list of folder to existing or new repository.
+
+    Args:
+        repo_str (str): filesystem path to repository folder
+
+    Returns:
+        Repository: repo object
+    """
     console.print(welcome())
 
     repo = start_repo(Path(repo_str))
@@ -195,6 +210,14 @@ def add(repo_str: str, folder_lst: List[str]):
 
 @app.command()
 def verify(repo_str: str):
+    """Verify consistenty of existing image repository by database info with existing image files.
+
+    Args:
+        repo_str (str): filesystem path to repository folder
+
+    Returns:
+        None
+    """
     repo = start_repo(Path(repo_str))
 
     out = repo.photo_org.check_consistency(IMAGE_EXTS)
@@ -215,6 +238,14 @@ def verify(repo_str: str):
 
 @app.command()
 def find(repo_str: str, tag: str, value: str):
+    """Diplay information about image repository if this exists in provided folder.
+
+    Args:
+        repo_str (str): filesystem path to repository folder
+
+    Returns:
+        Repository: repo object
+    """
     repo = start_repo(Path(repo_str))
 
     if tag == "country":
