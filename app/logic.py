@@ -2,6 +2,7 @@ from pathlib import Path
 from datetime import datetime
 from pprint import pformat
 from typing import Dict, List
+from dataclasses import dataclass, field
 import yaml
 
 
@@ -18,8 +19,8 @@ from app.utils import (
     scan_folder,
     get_location_from_gpscoord,
     get_gpscoord_from_exif,
-    generate_crypto_hash,
-    generate_perceptual_hash,
+    crypto_hash,
+    perceptual_hash,
     extract_first_integer,
     get_type,
 )
@@ -28,9 +29,113 @@ from app.utils import (
 logger = get_logger(__name__)
 
 
+@dataclass
+class GeoLocation:
+    longitude: float
+    latitude: float
+    country: str = field(init=False)
+    state: str = field(init=False)
+    city: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        if self.latitude and self.longitude:
+            country, state, city = get_location_from_gpscoord(
+                self.latitude, self.longitude
+            )
+        else:
+            country, state, city = ("unknown", "unknown", "unknown")
+        self.country = country
+        self.state = state
+        self.city = city
+
+
+def read_exif(filepath: Path):
+    # Read the Exif data from the photo file
+    with open(str(filepath), "rb") as f:
+        try:
+            return exifread.process_file(f, details=False)
+        except Exception as e:
+            print(f"Error reading EXIF from {filepath.name}: {e}")
+            return {}
+
+
+class ExifTags:
+    def __init__(self, filepath: Path):
+        self._exif_tags = read_exif(filepath)
+
+        self.process_tags()
+        # self.camera
+        # self.datetime
+        # self.width
+        # self.height
+        # self.resolution_x
+        # self.resolution_y
+        # self.resolution_units
+        # self.location_lat
+        # self.location_long
+
+    def process_tags(self):
+        # camera
+        if val := self._exif_tags.get("Image Model"):
+            self.camera = val.printable
+        else:
+            self.camera = None
+
+        # datetime
+        if val := self._exif_tags.get("EXIF DateTimeOriginal"):
+            self.datetime = datetime.strptime(val.printable, "%Y:%m:%d %H:%M:%S")
+        elif val := self._exif_tags.get("Image DateTime"):
+            self.datetime = datetime.strptime(val.printable, "%Y:%m:%d %H:%M:%S")
+        else:
+            self.datetime = None
+
+        # width
+        if val := self._exif_tags.get("EXIF ExifImageWidth"):
+            self.width = extract_first_integer(val.printable)
+        elif val := self._exif_tags.get("Image ImageWidth"):
+            self.width = extract_first_integer(val.printable)
+        else:
+            self.width = None
+
+        # height
+        if val := self._exif_tags.get("EXIF ExifImageLength"):
+            self.height = extract_first_integer(val.printable)
+        elif val := self._exif_tags.get("Image ImageLength"):
+            self.height = extract_first_integer(val.printable)
+        else:
+            self.height = None
+
+        # resolution units
+        if val := self._exif_tags.get("Image ResolutionUnit"):
+            self.resolution_units = val.printable
+        else:
+            self.resolution_units = None
+
+        # resolution X
+        if val := self._exif_tags.get("Image XResolution"):
+            self.resolution_x = int(val.printable)
+        else:
+            self.resolution_x = None
+
+        # resolution y
+        if val := self._exif_tags.get("Image YResolution"):
+            self.resolution_y = int(val.printable)
+        else:
+            self.resolution_y = None
+
+        # GPS coordinates
+        if val := self._exif_tags.get("Image GPSInfo"):
+            self.location_lat, self.location_long = get_gpscoord_from_exif(
+                self._exif_tags
+            )
+        else:
+            self.location_long = None
+            self.location_lat = None
+
+
 class Image:
     """
-    A class representing a photo and its associated tags.
+    A class representing an image file and its associated tags.
 
     Attributes:
         file (str): The file path of the photo.
@@ -46,117 +151,22 @@ class Image:
             file (str): The file path of the photo.
         """
         self.filepath = filepath.absolute()
-        self.tags = self.generate_tags()
-
-    def __str__(self):
-        return pformat(self.tags, indent=2)
-
-    def generate_tags(self) -> Dict[str, str]:
-        """
-        Generates tags associated with the photo using Exif metadata.
-
-        Returns:
-            Dict[str, str]: A dictionary containing various tags associated with the photo.
-        """
-        # Read the Exif data from the photo file
-        with open(str(self.filepath), "rb") as f:
-            try:
-                exif_tags = exifread.process_file(f, details=False)
-            except Exception as e:
-                print(f"Error reading EXIF from {self.filepath.name}")
-                exif_tags = {}
-
-        # Initialize a dictionary and store first tags
-        tags = {
-            "filepath": str(self.filepath),  # filepath
-            "size": self.filepath.stat().st_size,  # file size
-            "file_type": get_type(self.filepath.suffix.lower()),  # file type
-        }
-
-        # following tags are all obtained from EXIF
-
-        # camera
-        tags["camera"] = (
-            exif_tags["Image Model"].printable if exif_tags.get("Image Model") else None
-        )
-
-        # datetime
-        if exif_tags.get("EXIF DateTimeOriginal"):
-            tags["datetime"] = datetime.strptime(
-                exif_tags["EXIF DateTimeOriginal"].printable, "%Y:%m:%d %H:%M:%S"
-            )
-        elif exif_tags.get("Image DateTime"):
-            tags["datetime"] = datetime.strptime(
-                exif_tags["Image DateTime"].printable, "%Y:%m:%d %H:%M:%S"
+        self.size = self.filepath.stat().st_size
+        self.type = get_type(self.filepath.suffix.lower())
+        self.perceptual_hash = perceptual_hash(self.filepath)
+        self.crypto_hash = crypto_hash(self.filepath)
+        self.exif_tags = ExifTags(self.filepath)
+        if (
+            self.exif_tags
+            and self.exif_tags.location_lat
+            and self.exif_tags.location_long
+        ):
+            self.geo_location = GeoLocation(
+                self.exif_tags.location_long, self.exif_tags.location_lat
             )
         else:
-            tags["datetime"] = None
-
-        # width
-        if exif_tags.get("EXIF ExifImageWidth"):
-            tags["width"] = extract_first_integer(
-                exif_tags["EXIF ExifImageWidth"].printable
-            )
-        elif exif_tags.get("Image ImageWidth"):
-            tags["width"] = extract_first_integer(
-                exif_tags["Image ImageWidth"].printable
-            )
-        else:
-            tags["width"] = None
-
-        # height
-        if exif_tags.get("EXIF ExifImageLength"):
-            tags["height"] = extract_first_integer(
-                exif_tags["EXIF ExifImageLength"].printable
-            )
-        elif exif_tags.get("Image ImageLength"):
-            tags["height"] = extract_first_integer(
-                exif_tags["Image ImageLength"].printable
-            )
-        else:
-            tags["height"] = None
-
-        # resolution units
-        tags["resolution_units"] = (
-            exif_tags["Image ResolutionUnit"].printable
-            if exif_tags.get("Image ResolutionUnit")
-            else None
-        )
-        # resolution X
-        tags["resolution_x"] = (
-            int(exif_tags["Image XResolution"].printable)
-            if exif_tags.get("Image XResolution")
-            else None
-        )
-        # resolution Y
-        tags["resolution_y"] = (
-            int(exif_tags["Image YResolution"].printable)
-            if exif_tags.get("Image YResolution")
-            else None
-        )
-
-        # GPS information
-        country, region, city = None, None, None
-        if exif_tags.get("Image GPSInfo"):
-            latitude, longitude = get_gpscoord_from_exif(exif_tags)
-
-            if latitude and longitude:
-                location_coord_str = f"{latitude:.6f};{longitude:.6f}"
-                country, region, city = get_location_from_gpscoord(latitude, longitude)
-            else:
-                location_coord_str = "unknown"
-        else:
-            location_coord_str = "unknown"
-        tags["location_coord"] = location_coord_str
-        tags["location_country"] = country or None
-        tags["location_region"] = region or None
-        tags["location_city"] = city or None
-
-        # generate image hash ids
-        tags["perceptual_hash"] = generate_perceptual_hash(self.filepath)
-        tags["crypto_hash"] = generate_crypto_hash(self.filepath)
-
-        return tags
+            self.geo_location = GeoLocation(None, None)
+        self.customtags = None
 
 
 class ImageOrganizer:
@@ -209,22 +219,24 @@ class ImageOrganizer:
 
         # create image database object
         image_db = ImageModel(
-            original_filepath=image_obj.tags["filepath"],
-            camera=image_obj.tags["camera"],
-            datetime=image_obj.tags["datetime"],
-            file_type=image_obj.tags["file_type"],
-            size=image_obj.tags["size"],
-            width=image_obj.tags["width"],
-            height=image_obj.tags["height"],
-            resolution_units=image_obj.tags["resolution_units"],
-            resolution_x=image_obj.tags["resolution_x"],
-            resolution_y=image_obj.tags["resolution_y"],
-            location_coord=image_obj.tags["location_coord"],
-            location_country=image_obj.tags["location_country"],
-            location_region=image_obj.tags["location_region"],
-            location_city=image_obj.tags["location_city"],
-            perceptual_hash=image_obj.tags["perceptual_hash"],
-            crypto_hash=image_obj.tags["crypto_hash"],
+            # basic info
+            original_filepath=str(image_obj.filepath),
+            file_type=image_obj.type,
+            size=image_obj.size,
+            perceptual_hash=image_obj.perceptual_hash,
+            crypto_hash=image_obj.crypto_hash,
+            camera=image_obj.exif_tags.camera,
+            datetime=image_obj.exif_tags.datetime,
+            width=image_obj.exif_tags.width,
+            height=image_obj.exif_tags.height,
+            resolution_units=image_obj.exif_tags.resolution_units,
+            resolution_x=image_obj.exif_tags.resolution_x,
+            resolution_y=image_obj.exif_tags.resolution_y,
+            location_longitude=image_obj.geo_location.longitude,
+            location_latitude=image_obj.geo_location.latitude,
+            location_country=image_obj.geo_location.country,
+            location_state=image_obj.geo_location.state,
+            location_city=image_obj.geo_location.city,
             new_filepath="",
             n_perceptual_hash=0,
         )
@@ -238,19 +250,19 @@ class ImageOrganizer:
         if do_copy:
             # Determine the destination folder based on the image's datetime metadata
             # or use a default folder if the datetime is not available
-            dest_folder = (
-                self.repo_path.joinpath(
-                    str(image_obj.tags["datetime"].year),
-                    str(image_obj.tags["datetime"].month),
+            if image_obj.exif_tags.datetime:
+                dest_folder = self.repo_path.joinpath(
+                    str(image_obj.exif_tags.datetime.year),
+                    str(image_obj.exif_tags.datetime.month),
                 )
-                if image_obj.tags.get("datetime")
-                else self.repo_path.joinpath("unknown", "unknown")
-            )
+            else:
+                dest_folder = self.repo_path.joinpath("unknown", "unknown")
+
             dest_folder.mkdir(parents=True, exist_ok=True)
 
             # Generate the destination filename using the perceptual hash and n_perceptualhash values
-            dest_name = f"{image_obj.tags['perceptual_hash']}_{n_perceptualhash}"
-            extension = Path(image_obj.tags["filepath"]).suffix[1:]
+            dest_name = f"{image_obj.perceptual_hash}_{n_perceptualhash}"
+            extension = Path(image_obj.filepath).suffix[1:]
 
             # Construct the destination filepath by joining the destination folder and filename
             dest_filename = f"{dest_name}.{extension.upper()}"
@@ -259,10 +271,12 @@ class ImageOrganizer:
             if not dest_filepath.exists():
                 try:
                     # Copy the image file from the original filepath to the destination filepath
-                    shutil.copy(str(image_obj.tags["filepath"]), str(dest_filepath))
+                    shutil.copy(str(image_obj.exif_tags.filepath), str(dest_filepath))
 
                     # Update the new_filepath attribute of the image in the database
-                    self.db.update_newpath(image_obj.tags["crypto_hash"], dest_filepath)
+                    self.db.update_newpath(
+                        image_obj.exif_tags.crypto_hash, dest_filepath
+                    )
                 except Exception:
                     logger.error(Exception)
                     return False
@@ -297,9 +311,9 @@ class ImageOrganizer:
 
                 if Path(row.new_filepath).exists():
                     # file exists in new location
-                    if Path(row.new_filepath).stem.split("_")[
-                        0
-                    ] == generate_perceptual_hash(Path(row.new_filepath)):
+                    if Path(row.new_filepath).stem.split("_")[0] == perceptual_hash(
+                        Path(row.new_filepath)
+                    ):
                         # file is the correct image
                         exist_repo_not_db.remove(Path(row.new_filepath))
                     else:

@@ -129,7 +129,7 @@ def get_location_from_gpscoord(latitude, longitude):
         return "unknown"
 
 
-def generate_perceptual_hash(image_path: Path, method: str = "phash") -> str:
+def perceptual_hash(image_path: Path, method: str = "phash") -> str:
     """
     Generates a perceptual hash identifier for an image using the specified method.
 
@@ -157,7 +157,7 @@ def generate_perceptual_hash(image_path: Path, method: str = "phash") -> str:
     return str(hash_value)
 
 
-def generate_crypto_hash(image_path: str, algorithm: str = "sha256") -> str:
+def crypto_hash(image_path: str, algorithm: str = "sha256") -> str:
     """
     Generates a unique hash identifier for an image using the specified hashing algorithm.
 

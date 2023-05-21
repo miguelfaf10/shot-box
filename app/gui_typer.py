@@ -25,8 +25,8 @@ from rich.progress import (
 
 from pyfiglet import Figlet
 
-from logic import ImageOrganizer
-from utils import get_logger, scan_folder
+from app.logic import ImageOrganizer
+from app.utils import get_logger, scan_folder
 
 # configuration parameters
 with open("app/config.yaml") as file:
@@ -254,5 +254,5 @@ def find(repo_str: str, tag: str, value: str):
     print(out)
 
 
-if __name__ == "__main__":
-    app()
+# if __name__ == "__main__":
+#     app()
