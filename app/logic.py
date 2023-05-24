@@ -1,176 +1,79 @@
+import itertools
 from pathlib import Path
+from enum import Enum
 from datetime import datetime
 from pprint import pformat
-from typing import Dict, List
+from typing import Dict, List, Protocol
 from dataclasses import dataclass, field
 import yaml
 
-
 import shutil
 
-import exifread
-import imagehash
-
-from app.infra.repository.image_database import ImageDatabase
-from app.infra.entities.image_model import ImageModel
+from app.infra.repository.media_database import MediaDatabase
+from app.infra.entities.media_model import MediaDBModel
+from app.hashing import perceptual_hash
 
 from app.utils import (
     get_logger,
     scan_folder,
-    get_location_from_gpscoord,
-    get_gpscoord_from_exif,
-    crypto_hash,
-    perceptual_hash,
-    extract_first_integer,
-    get_type,
 )
 
 # Create configure module   module_logger
 logger = get_logger(__name__)
 
+# load configuration file
+with open("app/config.yaml") as file:
+    config = yaml.safe_load(file)
 
-@dataclass
-class GeoLocation:
+# read configuration parameters
+DB_FILE = config["database"]["file"]
+DB_FOLDER = config["database"]["folder"]
+# Read configuration parameters
+IMAGE_EXTS = list(
+    itertools.chain.from_iterable(
+        values for values in config["image"]["types"].values()
+    )
+)
+
+
+class IntrinsicTags(Protocol):
+    filepath: Path
+    camera: str
+    datetime: datetime
+    width: int
+    height: int
+    resolution_x: int
+    resolution_y: int
+    resolution_units: str
+    location_lat: float
+    location_long: float
+
+
+class CustomTags(Protocol):
+    pass
+
+
+class GeoLocation(Protocol):
     longitude: float
     latitude: float
-    country: str = field(init=False)
-    state: str = field(init=False)
-    city: str = field(init=False)
-
-    def __post_init__(self) -> None:
-        if self.latitude and self.longitude:
-            country, state, city = get_location_from_gpscoord(
-                self.latitude, self.longitude
-            )
-        else:
-            country, state, city = ("unknown", "unknown", "unknown")
-        self.country = country
-        self.state = state
-        self.city = city
+    country: str
+    state: str
+    city: str
 
 
-def read_exif(filepath: Path):
-    # Read the Exif data from the photo file
-    with open(str(filepath), "rb") as f:
-        try:
-            return exifread.process_file(f, details=False)
-        except Exception as e:
-            print(f"Error reading EXIF from {filepath.name}: {e}")
-            return {}
+class MediaObj(Protocol):
+    filepath: Path
+    size: int
+    type: str
+    perceptual_hash: str
+    crypto_hash: str
+    intrinsic_tags: IntrinsicTags
+    geo_location: GeoLocation
+    custom_tags: CustomTags
 
 
-class ExifTags:
-    def __init__(self, filepath: Path):
-        self._exif_tags = read_exif(filepath)
-
-        self.process_tags()
-        # self.camera
-        # self.datetime
-        # self.width
-        # self.height
-        # self.resolution_x
-        # self.resolution_y
-        # self.resolution_units
-        # self.location_lat
-        # self.location_long
-
-    def process_tags(self):
-        # camera
-        if val := self._exif_tags.get("Image Model"):
-            self.camera = val.printable
-        else:
-            self.camera = None
-
-        # datetime
-        if val := self._exif_tags.get("EXIF DateTimeOriginal"):
-            self.datetime = datetime.strptime(val.printable, "%Y:%m:%d %H:%M:%S")
-        elif val := self._exif_tags.get("Image DateTime"):
-            self.datetime = datetime.strptime(val.printable, "%Y:%m:%d %H:%M:%S")
-        else:
-            self.datetime = None
-
-        # width
-        if val := self._exif_tags.get("EXIF ExifImageWidth"):
-            self.width = extract_first_integer(val.printable)
-        elif val := self._exif_tags.get("Image ImageWidth"):
-            self.width = extract_first_integer(val.printable)
-        else:
-            self.width = None
-
-        # height
-        if val := self._exif_tags.get("EXIF ExifImageLength"):
-            self.height = extract_first_integer(val.printable)
-        elif val := self._exif_tags.get("Image ImageLength"):
-            self.height = extract_first_integer(val.printable)
-        else:
-            self.height = None
-
-        # resolution units
-        if val := self._exif_tags.get("Image ResolutionUnit"):
-            self.resolution_units = val.printable
-        else:
-            self.resolution_units = None
-
-        # resolution X
-        if val := self._exif_tags.get("Image XResolution"):
-            self.resolution_x = int(val.printable)
-        else:
-            self.resolution_x = None
-
-        # resolution y
-        if val := self._exif_tags.get("Image YResolution"):
-            self.resolution_y = int(val.printable)
-        else:
-            self.resolution_y = None
-
-        # GPS coordinates
-        if val := self._exif_tags.get("Image GPSInfo"):
-            self.location_lat, self.location_long = get_gpscoord_from_exif(
-                self._exif_tags
-            )
-        else:
-            self.location_long = None
-            self.location_lat = None
-
-
-class Image:
-    """
-    A class representing an image file and its associated tags.
-
-    Attributes:
-        file (str): The file path of the photo.
-        filename (str): The base name of the photo file.
-        tags (Dict[str, str]): A dictionary of tags associated with the photo.
-    """
-
-    def __init__(self, filepath: Path):
-        """
-        Initializes the Photo class with a file path.
-
-        Args:
-            file (str): The file path of the photo.
-        """
-        self.filepath = filepath.absolute()
-        self.size = self.filepath.stat().st_size
-        self.type = get_type(self.filepath.suffix.lower())
-        self.perceptual_hash = perceptual_hash(self.filepath)
-        self.crypto_hash = crypto_hash(self.filepath)
-        self.exif_tags = ExifTags(self.filepath)
-        if (
-            self.exif_tags
-            and self.exif_tags.location_lat
-            and self.exif_tags.location_long
-        ):
-            self.geo_location = GeoLocation(
-                self.exif_tags.location_long, self.exif_tags.location_lat
-            )
-        else:
-            self.geo_location = GeoLocation(None, None)
-        self.customtags = None
-
-
-class ImageOrganizer:
-    def __init__(self, repo_path: Path, db_path: Path):
+class MediaOrganizer:
+    def __init__(self, repo_path: Path, media_db: MediaDatabase):
         """Initialize the PhotoOrganizer object.
 
         Args:
@@ -181,8 +84,7 @@ class ImageOrganizer:
             None
         """
         self.repo_path = repo_path
-        self.db_path = db_path
-        self.db = ImageDatabase(self.db_path) if self.db_path.parent.exists() else None
+        self.db = media_db
 
     def get_info(self):
         """
@@ -212,37 +114,35 @@ class ImageOrganizer:
             "files_exist": files_exist,
         }
 
-    def process_file(self, image_path: Path, do_copy=True):
-        # process all images found
-        # analyse image and create logic.Photo object
-        image_obj = Image(image_path)
-
-        # create image database object
-        image_db = ImageModel(
+    def process_file(self, media_obj: MediaObj, do_copy=True):
+        # create media database object
+        media_db_model = MediaDBModel(
             # basic info
-            original_filepath=str(image_obj.filepath),
-            file_type=image_obj.type,
-            size=image_obj.size,
-            perceptual_hash=image_obj.perceptual_hash,
-            crypto_hash=image_obj.crypto_hash,
-            camera=image_obj.exif_tags.camera,
-            datetime=image_obj.exif_tags.datetime,
-            width=image_obj.exif_tags.width,
-            height=image_obj.exif_tags.height,
-            resolution_units=image_obj.exif_tags.resolution_units,
-            resolution_x=image_obj.exif_tags.resolution_x,
-            resolution_y=image_obj.exif_tags.resolution_y,
-            location_longitude=image_obj.geo_location.longitude,
-            location_latitude=image_obj.geo_location.latitude,
-            location_country=image_obj.geo_location.country,
-            location_state=image_obj.geo_location.state,
-            location_city=image_obj.geo_location.city,
+            original_filepath=str(media_obj.filepath),
+            file_type=media_obj.type,
+            size=media_obj.size,
+            perceptual_hash=media_obj.perceptual_hash,
+            crypto_hash=media_obj.crypto_hash,
+            # exif info
+            camera=media_obj.exif_tags.camera,
+            datetime=media_obj.exif_tags.datetime,
+            width=media_obj.exif_tags.width,
+            height=media_obj.exif_tags.height,
+            resolution_units=media_obj.exif_tags.resolution_units,
+            resolution_x=media_obj.exif_tags.resolution_x,
+            resolution_y=media_obj.exif_tags.resolution_y,
+            # geolocation
+            location_longitude=media_obj.geo_location.longitude,
+            location_latitude=media_obj.geo_location.latitude,
+            location_country=media_obj.geo_location.country,
+            location_state=media_obj.geo_location.state,
+            location_city=media_obj.geo_location.city,
             new_filepath="",
             n_perceptual_hash=0,
         )
 
         # add image db object into database
-        n_perceptualhash = self.db.insert_image(image_db)
+        n_perceptualhash = self.db.insert_media(media_db_model)
         if n_perceptualhash is None:
             return False
 
@@ -250,10 +150,10 @@ class ImageOrganizer:
         if do_copy:
             # Determine the destination folder based on the image's datetime metadata
             # or use a default folder if the datetime is not available
-            if image_obj.exif_tags.datetime:
+            if media_obj.exif_tags.datetime:
                 dest_folder = self.repo_path.joinpath(
-                    str(image_obj.exif_tags.datetime.year),
-                    str(image_obj.exif_tags.datetime.month),
+                    str(media_obj.exif_tags.datetime.year),
+                    str(media_obj.exif_tags.datetime.month),
                 )
             else:
                 dest_folder = self.repo_path.joinpath("unknown", "unknown")
@@ -261,8 +161,8 @@ class ImageOrganizer:
             dest_folder.mkdir(parents=True, exist_ok=True)
 
             # Generate the destination filename using the perceptual hash and n_perceptualhash values
-            dest_name = f"{image_obj.perceptual_hash}_{n_perceptualhash}"
-            extension = Path(image_obj.filepath).suffix[1:]
+            dest_name = f"{media_obj.perceptual_hash}_{n_perceptualhash}"
+            extension = Path(media_obj.filepath).suffix[1:]
 
             # Construct the destination filepath by joining the destination folder and filename
             dest_filename = f"{dest_name}.{extension.upper()}"
@@ -271,11 +171,11 @@ class ImageOrganizer:
             if not dest_filepath.exists():
                 try:
                     # Copy the image file from the original filepath to the destination filepath
-                    shutil.copy(str(image_obj.exif_tags.filepath), str(dest_filepath))
+                    shutil.copy(str(media_obj.exif_tags.filepath), str(dest_filepath))
 
                     # Update the new_filepath attribute of the image in the database
                     self.db.update_newpath(
-                        image_obj.exif_tags.crypto_hash, dest_filepath
+                        media_obj.exif_tags.crypto_hash, dest_filepath
                     )
                 except Exception:
                     logger.error(Exception)
@@ -286,13 +186,13 @@ class ImageOrganizer:
 
             return True
 
-    def filter_photos(self, search_tags: Dict[str, str]) -> List[Image]:
+    def filter_photos(self, search_tags: Dict[str, str]) -> List[MediaObj]:
         if search_tags.get("country"):
             filtered_photos = self.db.search_by_location(country=search_tags["country"])
 
         return filtered_photos
 
-    def display_photos(self, photos: List[Image]) -> None:
+    def display_photos(self, photos: List[MediaObj]) -> None:
         raise NotImplemented
         # Code for displaying selected photos
 
@@ -330,3 +230,15 @@ class ImageOrganizer:
             "exist_repo_not_db": exist_repo_not_db,
             "exist_repo_incorrect_name": exist_repo_incorrect_image,
         }
+
+
+class Repository:
+    """Handles repository folders and creation of ImageOrganizer"""
+
+    def __init__(self, repo_path: Path):
+        self.repo_path = repo_path.absolute()
+        self.db_path = repo_path.joinpath(DB_FOLDER).joinpath(DB_FILE)
+        if not (self.repo_path.exists() and self.db_path.parent.exists()):
+            self.db_path.parent.mkdir(parents=True)
+
+        self.photo_org = MediaOrganizer(self.repo_path, MediaDatabase(self.db_path))

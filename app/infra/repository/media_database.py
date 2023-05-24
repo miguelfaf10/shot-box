@@ -5,14 +5,14 @@ from typing import List, Dict
 from sqlalchemy import MetaData
 from app.infra.configs.base import Base
 from app.infra.configs.connection import DBConnectionHandler
-from app.infra.entities.image_model import ImageModel
+from app.infra.entities.media_model import MediaDBModel
 
 from app.utils import get_logger
 
 logger = get_logger(__name__)
 
 
-class ImageDatabase:
+class MediaDatabase:
     def __init__(self, db_path: Path):
         """Create the database tables initialize the database connection,
         and handles all database operations
@@ -43,7 +43,7 @@ class ImageDatabase:
             metadata.reflect(bind=db.get_engine())
 
         tables_check = metadata.sorted_tables
-        tables_model = ImageModel.metadata.sorted_tables
+        tables_model = MediaDBModel.metadata.sorted_tables
 
         if len(tables_check) != len(tables_model):
             logger.debug(
@@ -66,7 +66,7 @@ class ImageDatabase:
 
         return True
 
-    def insert_image(self, photo: ImageModel):
+    def insert_media(self, media: MediaDBModel):
         """Insert a new photo to the database. It first verifies if an entry with
         same perceptual_hash key already exists and fills in the n_perceptual_hash
         field accordingly.
@@ -80,20 +80,20 @@ class ImageDatabase:
         with DBConnectionHandler(self.db_path) as db:
             # if entrie with same crypto_hash exists cancel
             if not (
-                db.session.query(ImageModel)
-                .filter_by(crypto_hash=photo.crypto_hash)
+                db.session.query(MediaDBModel)
+                .filter_by(crypto_hash=media.crypto_hash)
                 .one_or_none()
             ):
-                photo.n_perceptual_hash = (
-                    db.session.query(ImageModel)
-                    .filter_by(perceptual_hash=photo.perceptual_hash)
+                media.n_perceptual_hash = (
+                    db.session.query(MediaDBModel)
+                    .filter_by(perceptual_hash=media.perceptual_hash)
                     .count()
                 )
 
-                db.session.add(photo)
+                db.session.add(media)
                 db.session.commit()
-                logger.info(f"Added {photo.original_filepath} to database")
-                return photo.n_perceptual_hash
+                logger.info(f"Added {media.original_filepath} to database")
+                return media.n_perceptual_hash
             else:
                 return None
 
@@ -106,13 +106,13 @@ class ImageDatabase:
             newpath: The new filepath to be updated.
         """
         with DBConnectionHandler(self.db_path) as db:
-            db.session.query(ImageModel).filter_by(crypto_hash=crypto_hash).update(
+            db.session.query(MediaDBModel).filter_by(crypto_hash=crypto_hash).update(
                 {"new_filepath": str(newpath)}
             )
             db.session.commit()
 
     def search_by_date(self, start_date, end_date=None):
-        """Search photos in the database within a specified date range.
+        """Search entries in the database within a specified date range.
 
         Args:
             start_date: The start date of the range.
@@ -124,16 +124,16 @@ class ImageDatabase:
         if not end_date:
             end_date = datetime.now()
         with DBConnectionHandler(self.db_path) as db:
-            photos = (
-                db.session.query(ImageModel)
-                .filter(ImageModel.datetime.between(start_date, end_date))
+            media_entries = (
+                db.session.query(MediaDBModel)
+                .filter(MediaDBModel.datetime.between(start_date, end_date))
                 .all()
             )
 
-        return photos
+        return media_entries
 
     def search_by_perceptualhash(self, perceptual_hash):
-        """Search a photo in the database by its perceptual_hash.
+        """Search the database by its perceptual_hash.
 
         Args:
             perceptual_hash: The perceptual hash key to search for.
@@ -142,13 +142,13 @@ class ImageDatabase:
             Photos: The photo matching the perceptual hash, or None if not found.
         """
         with DBConnectionHandler(self.db_path) as db:
-            photo = (
-                db.session.query(ImageModel)
+            media_entry = (
+                db.session.query(MediaDBModel)
                 .filter_by(perceptual_hash=perceptual_hash)
                 .one_or_none()
             )
 
-        return photo
+        return media_entry
 
     def search_by_location(self, country=None, region=None, city=None):
         """Search a photo in the database by location
@@ -162,22 +162,22 @@ class ImageDatabase:
             Photos: The photos matching the perceptual hash, or None if not found.
         """
         with DBConnectionHandler(self.db_path) as db:
-            photo = (
-                db.session.query(ImageModel).filter_by(location_country=country).all()
+            media_entries = (
+                db.session.query(MediaDBModel).filter_by(location_country=country).all()
             )
 
-        return photo
+        return media_entries
 
-    def get_all(self) -> List[ImageModel]:
+    def get_all(self) -> List[MediaDBModel]:
         """Retrieve all photos from the database.
 
         Returns:
             List[Photos]: A list of all photos in the database.
         """
         with DBConnectionHandler(self.db_path) as db:
-            photos = db.session.query(ImageModel).all()
+            media_entries = db.session.query(MediaDBModel).all()
 
-        return photos
+        return media_entries
 
     def get_all_newpaths(self) -> Dict[str, Dict[str, str]]:
         """Retrieve the repository file paths for all photos in the database.
@@ -187,11 +187,11 @@ class ImageDatabase:
             to their corresponding file paths in repository and sizes.
         """
         with DBConnectionHandler(self.db_path) as db:
-            photos = db.session.query(ImageModel).all()
+            media_entries = db.session.query(MediaDBModel).all()
         return {
-            photo.crypto_hash.hex(): {
-                "new_filepath": photo.new_filepath,
-                "size": photo.size,
+            entry.crypto_hash.hex(): {
+                "new_filepath": entry.new_filepath,
+                "size": entry.size,
             }
-            for photo in photos
+            for entry in media_entries
         }

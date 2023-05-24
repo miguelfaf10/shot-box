@@ -10,8 +10,8 @@ import numpy as np
 import pandas as pd
 
 from app.logic import Image, ImageOrganizer
-from app.infra.repository.image_database import ImageDatabase
-from app.infra.entities.image_model import ImageModel
+from app.infra.repository.media_database import ImageDatabase
+from app.infra.entities.media_model import ImageModel
 
 # configuration parameters
 with open("app/config.yaml") as file:

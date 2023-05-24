@@ -25,15 +25,15 @@ from rich.progress import (
 
 from pyfiglet import Figlet
 
-from app.logic import ImageOrganizer
+from app.images import Image
+from app.logic import Repository
 from app.utils import get_logger, scan_folder
 
-# configuration parameters
+# load configuration file
 with open("app/config.yaml") as file:
     config = yaml.safe_load(file)
 
-DB_FILE = config["database"]["file"]
-DB_FOLDER = config["database"]["folder"]
+# Read configuration parameters
 IMAGE_EXTS = list(
     itertools.chain.from_iterable(
         values for values in config["image"]["types"].values()
@@ -43,7 +43,9 @@ IMAGE_EXTS = list(
 # Create configure module   module_logger
 logger = get_logger(__name__)
 
+# Create Typer app
 app = typer.Typer()
+# Create Rich console
 console = Console()
 figlet = Figlet(font="slant")
 
@@ -51,28 +53,6 @@ figlet = Figlet(font="slant")
 def welcome():
     figlet.width = 100
     return f'{figlet.renderText("Shot Box")} {figlet.renderText("Photo - Organizer")}'
-
-
-class Repository:
-    def __init__(self, repo_path: Path):
-        self.repo_path = repo_path.absolute()
-        self.db_path = repo_path.joinpath(DB_FOLDER).joinpath(DB_FILE)
-        if not self.check_repo():
-            self.create_repo()
-            console.print(f"Repo created at {str(self.repo_path)}")
-        else:
-            console.print(f"Repo folder at {str(self.repo_path)} exists")
-        self.photo_org = ImageOrganizer(self.repo_path, self.db_path)
-
-    def check_repo(self):
-        if not (self.repo_path.exists() and self.db_path.parent.exists()):
-            return False
-        else:
-            return True
-
-    def create_repo(self):
-        self.db_path.parent.mkdir(parents=True)
-        return True
 
 
 @app.command()
@@ -86,8 +66,7 @@ def create(repo_str: str):
     Returns:
     None
     """
-    repo = Repository(Path(repo_str))
-    # photo_org = PhotoOrganizer(repo.repo_path, repo.db_path)
+    repo = start_repo(Path(repo_str))
 
 
 def start_repo(repo_path: Path):
@@ -101,9 +80,9 @@ def start_repo(repo_path: Path):
         Repository: repo object
     """
     repo = Repository(repo_path)
-    if not repo.check_repo():
-        console.print(f"Path {str(repo.repo_pathpath)} is not a valid repository")
-        exit(-1)
+    # if not repo.check_repo():
+    #     console.print(f"Path {str(repo.repo_pathpath)} is not a valid repository")
+    #     exit(-1)
     # photo_org = PhotoOrganizer(repo.repo_path, repo.db_path)
 
     return repo
@@ -137,7 +116,6 @@ def add(repo_str: str, folder_lst: List[str]):
     Returns:
         Repository: repo object
     """
-    console.print(welcome())
 
     repo = start_repo(Path(repo_str))
 
@@ -189,7 +167,7 @@ def add(repo_str: str, folder_lst: List[str]):
                     foldername=image_path.name,
                 )
 
-                if not repo.photo_org.process_file(image_path):
+                if not repo.photo_org.process_file(Image(image_path)):
                     ignored_images.append(image_path.name)
                 else:
                     processed_images.append(image_path.name)

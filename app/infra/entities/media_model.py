@@ -3,10 +3,10 @@ from sqlalchemy import create_engine, Column, Integer, String, DateTime, MetaDat
 
 
 # Define database model for photos
-if "images" not in Base.metadata.tables:
+if "media" not in Base.metadata.tables:
 
-    class ImageModel(Base):
-        __tablename__ = "images"
+    class MediaDBModel(Base):
+        __tablename__ = "media"
         id = Column(Integer, primary_key=True)
         original_filepath = Column(String, nullable=False)
         camera = Column(String)
